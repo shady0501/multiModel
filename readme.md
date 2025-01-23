@@ -1,204 +1,73 @@
-虚拟环境配置（仅用于测试代码是否运行成功而非训练使用）：
-![alt text](mdImage/env_run.png.png)
+# 1. 环境配置
 
-安装依赖库：
+- 虚拟环境配置（仅用于测试代码是否运行成功而非训练使用）：
+![alt text](mdImage/env_run.png)
+
+- 环境更新：mmcv 在python 3.8——3.11，3.12支持不好，需要降到3.12以下，因此更换镜像将环境降到3.10：
+  ![alt text](mdImage/env_run2.png)
+
+---
+
+# 2. 安装依赖库
+```bash
 pip install opencv-python
 pip install numpy
 pip install shapely
 pip install scikit-learn
 pip install pillow
 pip install matplotlib
+pip install scikit-image tifffile
 
-预训练文件：preprocess.ipynb
-训练预测文件：utils.py
+pip install -U openmim
+mim install mmengine
+mim install mmcv>=2.0.0
+pip install mmpretrain
+```
 
-2025.1.20
+---
+
+# 3. 代码
+
+### 预训练使用模型
+[使用 2024 年的 genview 模型](https://huggingface.co/Xiaojie0903/genview_pretrained_models/tree/main)
+
+
+### 3.1 预训练文件
+- `preprocess.ipynb`
+- `extract_features.py`
+- `encoders.py`
+
+**图片特征提取的运行命令：**
+  *(checkpoints文件和代码处于同一级目录)*
+```bash
+python extract_features.py \
+  --input_image input_images/preprocess_demo.png \
+  --checkpoint mocov3_resnet50_8xb512-amp-coslr-100e_in1k_genview.pth \
+  --model_type genview_resnet50 \
+  --tile_size 512 \
+  --overlap 128 \
+  --batch_size 32 \
+```
+
+### 3.2 训练预测文件
+- `utils.py`
+- `models.py`
+
+---
+
+# 4. 开发日志
+
+### 2025.1.20
 1. preprocess.ipynb 图像预处理调整并运行成功，图像如下：
-![alt text](mdImage/image_preprocess.png.png)
+![alt text](mdImage/image_preprocess.png)
 
-2. 使用 AI 调整完成大部分流程，包括encoders.py、extract_features.py、models.py、utils.py
+2. 使用 AI 调整完成大部分流程，包括`encoders.py`、`extract_features.py`、`models.py`、`utils.py`
 
-
-
-# 预训练特征提取步骤：
-
-使用EsViT（Efficient Self-supervised Vision Transformer）进行预训练和特征提取可以分为以下几个主要步骤。以下是一个详细的指南：
-
----
-
-### **1. 环境准备**
-确保你的环境中安装了必要的库：
-```bash
-pip install torch torchvision timm opencv-python
-git clone https://github.com/microsoft/esvit
-cd esvit
-pip install -r requirements.txt
-```
-
----
-
-### **2. 数据准备**
-准备你的自定义数据集，目录结构如下：
-```
-data/
-  train/
-    class1/
-      img1.jpg
-      img2.jpg
-      ...
-    class2/
-      ...
-  val/
-    ...
-```
-
----
-
-### **3. 自监督预训练**
-EsViT的核心优势在于自监督预训练。使用以下脚本进行预训练：
-
-#### **配置文件**
-创建配置文件 `config.yaml`：
-```yaml
-model:
-  name: esvit_vit_small
-  pretrained: False
-  drop_path_rate: 0.1
-
-data:
-  dataset: "custom_dataset"
-  root: "data/train"
-  input_size: 224
-  batch_size: 64
-  num_workers: 8
-
-training:
-  epochs: 100
-  optimizer: adamw
-  lr: 3e-4
-  weight_decay: 0.05
-  warmup_epochs: 10
-
-self_sup:
-  method: "dino"  # 使用DINO自监督方法
-  teacher_temp: 0.07
-  student_temp: 0.1
-  center_momentum: 0.9
-```
-
-#### **启动训练**
-```bash
-python train_self_supervised.py \
-  --cfg config.yaml \
-  --output_dir ./output \
-  --gpu 0
-```
-
----
-
-### **4. 特征提取**
-预训练完成后，使用训练好的模型提取特征：
-
-#### **加载预训练权重**
-```python
-import torch
-from models import build_model
-
-# 加载预训练模型
-model = build_model(
-    arch="vit_small",
-    pretrained_weights="./output/checkpoint.pth",  # 预训练权重路径
-    use_self_supervised=True
-)
-model.eval()
-```
-
-#### **提取特征**
-```python
-from torchvision import transforms
-from PIL import Image
-
-# 定义预处理
-transform = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-
-# 提取单张图像特征
-def extract_features(image_path, model):
-    img = Image.open(image_path).convert("RGB")
-    img_tensor = transform(img).unsqueeze(0)  # shape: [1, 3, 224, 224]
-    
-    with torch.no_grad():
-        features = model(img_tensor)  # 提取CLS token或全局平均池化
-    
-    return features.squeeze().numpy()  # 转为numpy数组
-
-# 示例
-features = extract_features("data/train/class1/img1.jpg", model)
-print(f"特征维度: {features.shape}")
-```
-
----
-
-### **5. 下游任务应用**
-提取的特征可用于分类、检索等任务：
-
-#### **分类示例（使用Scikit-learn）**
-```python
-from sklearn.svm import SVC
-import numpy as np
-import os
-
-# 加载所有特征和标签
-X, y = [], []
-for class_dir in os.listdir("data/train"):
-    for img_path in os.listdir(f"data/train/{class_dir}"):
-        features = extract_features(f"data/train/{class_dir}/{img_path}", model)
-        X.append(features)
-        y.append(class_dir)
-
-# 训练分类器
-clf = SVC()
-clf.fit(X, y)
-
-# 预测
-test_features = extract_features("data/test/img.jpg", model)
-pred = clf.predict([test_features])
-print(f"预测类别: {pred[0]}")
-```
-
----
-
-### **关键参数说明**
-| 参数                | 说明                                                                 |
-|---------------------|----------------------------------------------------------------------|
-| `--arch`            | 模型架构（如 `vit_small`, `vit_base`）                               |
-| `--pretrained_weights` | 预训练权重路径                                                     |
-| `--use_self_supervised` | 是否使用自监督预训练                                             |
-| `method: "dino"`    | 自监督方法（DINO、MoCo等）                                           |
-
----
-
-### **性能优化建议**
-1. **多卡训练**：
-   ```bash
-   torchrun --nproc_per_node=4 train_self_supervised.py --cfg config.yaml
-   ```
-2. **混合精度训练**：
-   ```yaml
-   training:
-     fp16: True
-   ```
-3. **特征缓存**：
-   ```python
-   # 提前提取并保存所有特征
-   np.save("train_features.npy", X)
-   np.save("train_labels.npy", y)
-   ```
-
----
-
-通过以上步骤，你可以完成EsViT的自监督预训练和特征提取，并将其应用于材料科学图像分析任务。
+### 2025.1.23
+1. 修复 GitHub 提交问题，在保证代码更新不变前提下丢失了近5条推送记录(╥﹏╥)，重新提交
+2. 由于原论文中 EsViT 中提供的 checkpoints 无法下载，通过调研使用2024新模型 genview 
+3. 嵌入 genview 模型
+  - 调整完成模型预训练和图片特征提取部分，使用 genview 模型 ([GitHub 地址](https://github.com/xiaojieli0903/genview/))
+  - 模型使用的checkpoints为 Hugging Face 中提供的checkpoints，如图所示：
+    ![alt text](mdImage/checkpoints.png)
+4. 成功提取灰度图片特征，将其保存为output/genview_features.npz 用于后续训练

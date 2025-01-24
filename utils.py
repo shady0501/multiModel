@@ -1,10 +1,15 @@
 import os
+import argparse
 import numpy as np
 import pandas as pd
 import random
 import torch
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+
+from model import ConcreteAttentionModel  # 使用新的模型
 
 # 设置随机种子以确保可重复性
 def seed_worker(worker_id):
@@ -14,46 +19,33 @@ def seed_worker(worker_id):
 
 # 数据加载和批处理
 def collate(batch):
-    # 将批次数据转换为张量
-    img = torch.cat([item[0] for item in batch], dim=0)  # 合并图像特征
-    text = torch.cat([item[1] for item in batch], dim=0)  # 合并文本特征
-    text_cat = torch.stack([item[2] for item in batch])  # 合并文本分类变量
-    label = torch.FloatTensor([item[3] for item in batch])  # 抗压强度标签
+    img = torch.stack([item[0] for item in batch], dim=0)  # 图像特征
+    text_cont = torch.stack([item[1] for item in batch], dim=0)  # 连续特征
+    text_cat = torch.stack([item[2] for item in batch], dim=0)  # 离散特征
+    label = torch.tensor([item[3] for item in batch], dtype=torch.float32)  # 标签
     slide_id = [item[4] for item in batch]  # 样本ID
-    return [img, text, text_cat, label, slide_id]       
+    return [img, text_cont, text_cat, label, slide_id]
 
 # 数据集类
 class FeatureBagsDataset(Dataset):
-    def __init__(self, df, data_dir, input_feature_size, input_text_size, input_text_cat_size):
-        self.slide_df = df.copy().reset_index(drop=True)
-        self.data_dir = data_dir
-        self.input_feature_size = input_feature_size
-        self.input_text_size = input_text_size
-        self.input_text_cat_size = input_text_cat_size  # 文本分类变量的类别数
-    
-    def _get_feature_path(self, slide_id):
-        return os.path.join(self.data_dir, f"{slide_id}_Mergedfeatures.pt")
-
-    def __getitem__(self, idx):
-        slide_id = self.slide_df["slide_id"][idx]
-        label = self.slide_df["compressive_strength"][idx]  # 假设标签列名为 compressive_strength
-
-        # 加载图像特征
-        full_path = self._get_feature_path(slide_id)
-        features = torch.load(full_path)
-        features_merged = torch.from_numpy(np.array([x[0].mean(0) for x in features]))  # 合并特征
-
-        # 加载文本特征（假设文本特征已预处理好）
-        text_features = torch.from_numpy(np.load(os.path.join(self.data_dir, f"{slide_id}_text.npy")))  # 文本特征
-
-        # 加载文本分类变量
-        text_cat = self.slide_df["text_category"][idx]  # 假设分类变量列名为 text_category
-        text_cat = torch.tensor(text_cat, dtype=torch.long)  # 转换为长整型张量
-
-        return features_merged, text_features, text_cat, label, slide_id
+    def __init__(self, npz_file_path, slide_df, categorical_columns, continuous_columns, target_column):
+        data = np.load(npz_file_path)
+        self.features = torch.tensor(data['features'], dtype=torch.float32)  # 图像特征
+        self.slide_df = slide_df.reset_index(drop=True)
+        self.categorical_columns = categorical_columns
+        self.continuous_columns = continuous_columns
+        self.target_column = target_column
 
     def __len__(self):
         return len(self.slide_df)
+
+    def __getitem__(self, idx):
+        feature = self.features[idx]
+        categorical_features = torch.tensor(self.slide_df.loc[idx, self.categorical_columns].values, dtype=torch.long)  # 离散特征
+        continuous_features = torch.tensor(self.slide_df.loc[idx, self.continuous_columns].values, dtype=torch.float32)  # 连续特征
+        label = torch.tensor(self.slide_df[self.target_column][idx], dtype=torch.float32)
+        slide_id = self.slide_df["slide_id"][idx]
+        return feature, continuous_features, categorical_features, label, slide_id
 
 # 定义数据加载器
 def define_data_sampling(train_split, val_split, method, workers):
@@ -134,6 +126,41 @@ def compute_regression_metrics(predictions, targets):
     r2 = r2_score(targets, predictions)
     return mse, mae, r2
 
+# 数据预处理函数
+def preprocess_and_split(data_path, categorical_columns, continuous_columns, target_column, test_size=0.2, random_state=42):
+    df = pd.read_csv(data_path)
+
+    # 处理缺失值
+    for col in continuous_columns:
+        df[col].fillna(df[col].median(), inplace=True)
+
+    for col in categorical_columns:
+        df[col].fillna("缺失", inplace=True)
+
+    # 独热编码离散值
+    ohe = OneHotEncoder(sparse=False, handle_unknown='ignore')
+    encoded_categorical = ohe.fit_transform(df[categorical_columns])
+
+    ohe_feature_names = ohe.get_feature_names_out(categorical_columns)
+    encoded_categorical_df = pd.DataFrame(encoded_categorical, columns=ohe_feature_names, index=df.index)
+
+    df = pd.concat([df, encoded_categorical_df], axis=1)
+    df.drop(columns=categorical_columns, inplace=True)
+
+    # 归一化连续值
+    scaler = MinMaxScaler()
+    df[continuous_columns] = scaler.fit_transform(df[continuous_columns])
+
+    # 划分训练集和测试集
+    feature_columns = list(encoded_categorical_df.columns) + continuous_columns
+
+    X = df[feature_columns]
+    y = df[target_column]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+
+    return X_train, X_test, y_train, y_test
+
 # 训练函数
 def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs, log_dir):
     early_stopping = MonitorBestModelEarlyStopping(patience=15, min_epochs=20, saving_checkpoint=True)
@@ -142,55 +169,87 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
         model.train()
         train_loss = 0.0
         for batch in train_loader:
-            features_merged, features_flattened, labels, _ = batch
-            predictions = model(features_merged, features_flattened)
-            loss = loss_fn(predictions, labels)
+            img_features, text_cont_features, text_cat_features, labels, _ = batch
+            predictions = model(img_features, text_cont_features, text_cat_features)
+            loss = loss_fn(predictions.squeeze(), labels)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
         train_loss /= len(train_loader)
 
-        # 验证阶段
         model.eval()
         val_loss = 0.0
         all_predictions, all_targets = [], []
         with torch.no_grad():
             for batch in val_loader:
-                features_merged, features_flattened, labels, _ = batch
-                predictions = model(features_merged, features_flattened)
-                val_loss += loss_fn(predictions, labels).item()
+                img_features, text_cont_features, text_cat_features, labels, _ = batch
+                predictions = model(img_features, text_cont_features, text_cat_features)
+                val_loss += loss_fn(predictions.squeeze(), labels).item()
                 all_predictions.extend(predictions.cpu().numpy())
                 all_targets.extend(labels.cpu().numpy())
         val_loss /= len(val_loader)
 
-        # 计算评估指标
         mse, mae, r2 = compute_regression_metrics(all_predictions, all_targets)
         print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, MSE: {mse:.6f}, MAE: {mae:.6f}, R²: {r2:.6f}')
 
-        # 早停机制
         early_stopping(epoch, val_loss, model, log_dir)
         if early_stopping.early_stop:
             print("Early stopping triggered.")
             break
 
-# 主函数
+# 添加参数解析函数
+def parse_args():
+    parser = argparse.ArgumentParser(description="混凝土性能预测模型训练")
+    parser.add_argument('--data_path', type=str, required=True, help="数据文件路径")
+    parser.add_argument('--categorical_columns', nargs='+', required=True, help="离散值字段列表")
+    parser.add_argument('--continuous_columns', nargs='+', required=True, help="连续值字段列表")
+    parser.add_argument('--target_column', type=str, required=True, help="目标值字段")
+    parser.add_argument('--test_size', type=float, default=0.2, help="测试集比例")
+    parser.add_argument('--random_state', type=int, default=42, help="随机种子")
+    parser.add_argument('--batch_size', type=int, default=32, help="训练批次大小")
+    parser.add_argument('--num_workers', type=int, default=4, help="数据加载器的线程数")
+    parser.add_argument('--num_epochs', type=int, default=100, help="训练的总轮数")
+    parser.add_argument('--log_dir', type=str, default="checkpoints", help="模型保存路径")
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    # 假设 df 是包含数据的 DataFrame，data_dir 是特征文件路径
-    df = pd.read_csv("data.csv")  # 加载数据
-    data_dir = "features"  # 特征文件目录
+    args = parse_args()
 
-    # 定义数据集
-    train_split = FeatureBagsDataset(df[df["split"] == "train"], data_dir, input_feature_size=128)
-    val_split = FeatureBagsDataset(df[df["split"] == "val"], data_dir, input_feature_size=128)
+    X_train, X_test, y_train, y_test = preprocess_and_split(
+        data_path=args.data_path,
+        categorical_columns=args.categorical_columns,
+        continuous_columns=args.continuous_columns,
+        target_column=args.target_column,
+        test_size=args.test_size,
+        random_state=args.random_state,
+    )
 
-    # 定义数据加载器
-    train_loader, val_loader = define_data_sampling(train_split, val_split, method="random", workers=4)
+    train_df = pd.concat([X_train, y_train], axis=1)
+    test_df = pd.concat([X_test, y_test], axis=1)
 
-    # 定义模型、优化器和损失函数
-    model = YourModel()  # 替换为你的模型
+    train_split = FeatureBagsDataset("train_features.npz", train_df, args.categorical_columns, args.continuous_columns, args.target_column)
+    val_split = FeatureBagsDataset("val_features.npz", test_df, args.categorical_columns, args.continuous_columns, args.target_column)
+
+    train_loader, val_loader = define_data_sampling(train_split, val_split, method="random", workers=args.num_workers)
+
+    model = ConcreteAttentionModel(
+        image_feature_size=1024,
+        text_feature_dim=len(args.continuous_columns),
+        categorical_dims=[10, 3, 3, 3, 3, 10],
+        embedding_dim=128,
+        feature_size_comp=512,
+        feature_size_attn=256,
+        dropout=True,
+        p_dropout_fc=0.25,
+        p_dropout_atn=0.25,
+        fusion_type='kron',
+        use_bilinear=True,
+        gate_hist=True,
+        gate_text=True,
+    )
+
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    loss_fn = torch.nn.MSELoss()  # 使用均方误差损失
+    loss_fn = torch.nn.MSELoss()
 
-    # 训练模型
-    train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs=100, log_dir="checkpoints")
+    train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs=args.num_epochs, log_dir=args.log_dir)

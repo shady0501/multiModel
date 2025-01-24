@@ -111,6 +111,9 @@ def extract_features(args):
     os.makedirs(args.output_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # 提取 slide_id，从文件名提取 slide_id，例如 "1.png" -> "1"
+    slide_id = os.path.basename(args.input_image).split('.')[0]  
+
     # 检查输入文件是否存在
     if not os.path.isfile(args.input_image):
         raise FileNotFoundError(f"无法找到输入图像文件: {args.input_image}")
@@ -155,13 +158,14 @@ def extract_features(args):
     # 保存特征
     features = np.concatenate(features, axis=0)
     np.savez_compressed(
-        os.path.join(args.output_dir, "genview_features.npz"),
+        os.path.join(args.output_dir, f"{slide_id}_features.npz"),
         features=features,
         coords=np.array(coords),  # 确保 coords 是 numpy 数组
         img_shape=img.shape,
-        model_type=args.model_type
+        model_type=args.model_type,
+        slide_id=slide_id  # 保存 slide_id
     )
-    print(f"特征提取完成！结果已保存到: {os.path.join(args.output_dir, 'genview_features.npz')}")
+    print(f"特征提取完成！结果已保存到: {os.path.join(args.output_dir, f'{slide_id}_features.npz')}")
 
 if __name__ == '__main__':
     parser = get_args_parser()

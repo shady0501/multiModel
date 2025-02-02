@@ -135,7 +135,7 @@ python extract_features.py \
   - log_dir：模型保存路径（默认 checkpoints）。
 
 3. 更改`models.py`文件，使其能够符合混凝土的输入格式，由于此次模型的更改，上述第二条中`utils.py`的代码和运行命令也需要更改，已更改，尚未运行测试
-     ```bash
+  ```bash
   python utils.py \
     --data_path "data/concrete_data.csv" \
     --categorical_columns "混凝土强度等级" "水泥品种" "水泥型号" "石子级配" "抗裂剂掺加方式" "抗裂剂型号" \
@@ -160,4 +160,9 @@ python extract_features.py \
   - num_workers：数据加载器的线程数（默认 4）。
   - num_epochs：训练的总轮数（默认 100）。
   - log_dir：模型保存路径（默认 checkpoints）。
-4. 
+
+### 2025.2.3
+1. 修改model.py的问题：
+    - 主模型默认特征维度和图片实际特征维度不一致，应改为524288
+    - 当前仍然使用kron乘积融合，但是可能会导致维度爆炸的问题，可能需要修改为concat融合，当前仍然为kron乘积融合
+

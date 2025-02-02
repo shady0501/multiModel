@@ -105,7 +105,7 @@ class Categorical_encoding(nn.Module):
 class ConcreteAttentionModel(nn.Module):
     def __init__(
         self,
-        image_feature_size=1024,
+        image_feature_size=524288,
         text_feature_dim=18,
         categorical_dims=[10, 3, 3, 3, 3, 10],
         embedding_dim=128,
@@ -115,6 +115,7 @@ class ConcreteAttentionModel(nn.Module):
         p_dropout_fc=0.25,
         p_dropout_atn=0.25,
         fusion_type='kron',
+        # fusion_type='concat',
         use_bilinear=True,
         gate_hist=True,
         gate_text=True,

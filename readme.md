@@ -162,7 +162,31 @@ python extract_features.py \
   - log_dir：模型保存路径（默认 checkpoints）。
 
 ### 2025.2.3
-1. 修改model.py的问题：
-    - 主模型默认特征维度和图片实际特征维度不一致，应改为524288
-    - 当前仍然使用kron乘积融合，但是可能会导致维度爆炸的问题，可能需要修改为concat融合，当前仍然为kron乘积融合
+1. 修改`model.py`的问题：
+    - 主模型默认特征维度和图片实际特征维度不一致，应改为**524288**
+    - 当前仍然使用**kron**乘积融合，但是可能会导致维度爆炸的问题，可能需要修改为**concat**融合，当前仍然为**kron**乘积融合
+
+### 2025.2.4
+1. 将文本数据格式从`xlsx`转换为`csv`，从而匹配代码格式
+2. 修改utils.py文件代码，使其能够解析输出的参数命令，并将独热编码改为标签编码（因为在多模态模型中无需使用独热编码防止高维空间距离错误，仅需要通过标签编码嵌入模型）
+3. 修改文本数据和图片特征数据的映射关系，每次获取数据时动态加载对应的特征文件
+4. 构造包含`slide_id`的假文本数据`data_419.csv`（仅三行），同时对应图片特征均为同一份图片特征拷贝三份重命名得到的
+5. 由于原来构造的csv格式的数据不是UTF-8格式，因此需要将`data_419.csv`转换为UTF-8格式，转换后的文件名为`data_419_utf8.csv`
+6. 当前存在模型运行计算过程中维度不匹配问题
+
+  运行命令：
+  ```bash
+  python utils.py \
+    --data_path "data_419_utf8.csv" \
+    --categorical_columns "Strength of Cement" "Gradation of concrete" "Type of water reducer" "Type of air entrainer" "cement admixture" \
+    --continuous_columns "Content of cement (kg/m3)" "Cement/water" "Dosage of FA(%)" "Sand rate" "Dosage of water reducer (%)" "Dosage of air entrainer (%)" "The temperature of concrete(℃)" "The temperature of air(℃)" "Air content(%)" \
+    --target_column "The 28day compressive strength of concrete" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 100 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+  ```
 

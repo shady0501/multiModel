@@ -25,8 +25,9 @@ def collate(batch):
     img_features = torch.stack([item[0] for item in batch], dim=0)  
     text_cont = torch.stack([item[1] for item in batch], dim=0)     
     text_cat = torch.stack([item[2] for item in batch], dim=0)      
-    labels = torch.tensor([item[3] for item in batch], dtype=torch.float32)
-    slide_ids = [item[4] for item in batch]                         
+    labels = torch.stack([item[3] for item in batch])  # 使用 stack 保持每个标签为一个独立元素
+    slide_ids = [item[4] for item in batch]
+    print("Batch sizes:", img_features.shape, text_cont.shape, text_cat.shape, labels.shape)
     return [img_features, text_cont, text_cat, labels, slide_ids]
 
 # ------------------------
@@ -81,14 +82,15 @@ class FeatureBagsDataset(Dataset):
         categorical_features = torch.tensor(
             row[self.categorical_columns].values.astype(int), dtype=torch.long
         )
-        label = torch.tensor(row[self.target_column], dtype=torch.float32)
+        
+        label = torch.tensor(float(row[self.target_column]), dtype=torch.float32)
 
         return img_feature, continuous_features, categorical_features, label, slide_id_int
 
 # ------------------------
 # 定义数据加载方式
 # ------------------------
-def define_data_sampling(train_dataset, val_dataset, method, workers):
+def define_data_sampling(batch_size, train_dataset, val_dataset, method, workers):
     g = torch.Generator()
     g.manual_seed(0)
 
@@ -96,7 +98,7 @@ def define_data_sampling(train_dataset, val_dataset, method, workers):
         print("Random sampling setting")
         train_loader = DataLoader(
             dataset=train_dataset,
-            batch_size=1,  # 每次处理一个样本
+            batch_size=batch_size,  # 每次处理一个样本
             shuffle=True,
             collate_fn=collate,
             num_workers=workers,
@@ -109,7 +111,7 @@ def define_data_sampling(train_dataset, val_dataset, method, workers):
 
     val_loader = DataLoader(
         dataset=val_dataset,
-        batch_size=1,
+        batch_size=batch_size,
         sampler=SequentialSampler(val_dataset),
         collate_fn=collate,
         num_workers=workers,
@@ -327,7 +329,7 @@ if __name__ == "__main__":
 
     # 4) 构建 DataLoader
     train_loader, val_loader = define_data_sampling(
-        train_dataset, val_dataset, method="random", workers=args.num_workers
+        args.batch_size, train_dataset, val_dataset, method="random", workers=args.num_workers
     )
 
     # 5) 计算离散特征的类别维度
@@ -364,3 +366,5 @@ if __name__ == "__main__":
         num_epochs=args.num_epochs,
         log_dir=args.log_dir
     )
+
+    print("successful")

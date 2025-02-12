@@ -190,3 +190,7 @@ python extract_features.py \
     --feature_dir "output"
   ```
 
+### 2025.2.6——2025.2.10
+1. 修改模型的线性层的输入维度和实际传入的数据维度不匹配问题
+2. 模型运行基本成功（调试使用的服务器内存太小，运行后系统盘爆满）
+   ![alt text](mdImage/run_almost_success.png)

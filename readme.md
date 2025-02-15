@@ -194,3 +194,30 @@ python extract_features.py \
 1. 修改模型的线性层的输入维度和实际传入的数据维度不匹配问题
 2. 模型运行基本成功（调试使用的服务器内存太小，运行后系统盘爆满）
    ![alt text](mdImage/run_almost_success.png)
+
+### 2025.2.12
+查看混凝土微观图像，明确应该识别的图像特征
+1. 白色——水泥熟料——关键强度指标——含量与强度负相关
+2. 黑色圆形——粉煤灰——当前不考虑
+3. 黑色——C-S-H——含量与强度正相关
+![alt text](mdImage/microscopic_image.png)
+
+### 2025.2.13——2025.2.14
+使用VCCTL软件模拟构造100个混凝土微观图像，见`data/xxx.png`
+
+### 2025.2.15
+1. 使用模拟构造的图像数据进行初步实验预测
+2. 更换文本数据，因此运行命令改为：
+```bash
+  python utils.py \
+    --data_path "data.csv" \
+    --continuous_columns "slide_id" "水用量（kg/m3）" "水泥矿物组分_C3S（%）" "水泥矿物组分_C2S（%）" "水泥矿物组分_C3A（%）" "水泥矿物组分_C4AF（%）" "胶砂抗压_7d（MPa）" "胶砂抗压_28d（MPa）" "胶砂抗折3d（MPa）" "胶砂抗折7d（MPa）" "胶砂抗折_28d（MPa）" "水化热_1d（J/g）" "水化热_3d（J/g）" "水化热_7d（J/g）" "水泥用量（kg/m3）" "FA化学组分_SiO2（%）" "FA化学组分_Al2O3（%）" "FA化学组分_Fe2O3（%）" "FA化学组分_CaO（%）" "粉煤灰用量（kg/m3）" "砂表观密度（kg/m3）" "砂用量（kg/m3）" "石1坚固性（%）" "石1压碎指标（%）" "石1用量（kg/m3）" "石2坚固性（%）" "石2压碎指标（%）" "石2用量（kg/m3）" "石3坚固性（%）" "石3压碎指标（%）" "石3用量（kg/m3）" "外加剂1用量（%）" "外加剂2用量（%）" \
+    --target_column "28d抗压强度" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 100 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+```

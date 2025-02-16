@@ -39,7 +39,7 @@ class FeatureBagsDataset(Dataset):
     """
     def __init__(self, feature_dir, slide_df,
                  categorical_columns, continuous_columns, target_column,
-                 file_prefix="genview_features_", file_suffix=".npz"):
+                 file_prefix="", file_suffix="_features.npz"):
         """
         参数：
           - feature_dir: 存放图片特征文件的根目录
@@ -147,10 +147,26 @@ class MonitorBestModelEarlyStopping:
             if self.counter >= self.patience and epoch > self.min_epochs:
                 self.early_stop = True
 
+    # def save_checkpoint(self, model, log_dir, epoch):
+    #     os.makedirs(log_dir, exist_ok=True)
+    #     filepath = os.path.join(log_dir, f"{epoch}_checkpoint.pt")
+    #     torch.save(model.state_dict(), filepath)
+    
     def save_checkpoint(self, model, log_dir, epoch):
         os.makedirs(log_dir, exist_ok=True)
+        # 获取所有 checkpoint 文件
+        ckpt_files = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if f.endswith("_checkpoint.pt")]
+        # 如果超过 10 个，则删除最旧的文件
+        if len(ckpt_files) >= 10:
+            # 按文件的修改时间排序
+            ckpt_files.sort(key=lambda x: os.path.getmtime(x))
+            oldest_file = ckpt_files[0]
+            os.remove(oldest_file)
+            print(f"Removed oldest checkpoint: {oldest_file}")
         filepath = os.path.join(log_dir, f"{epoch}_checkpoint.pt")
-        torch.save(model.state_dict(), filepath)
+        torch.save(model.state_dict(), filepath, _use_new_zipfile_serialization=False)
+        print(f"Saved checkpoint: {filepath}")
+
 
 # ------------------------
 # 评估指标等辅助函数
@@ -272,7 +288,7 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
 def parse_args():
     parser = argparse.ArgumentParser(description="混凝土性能预测模型训练")
     parser.add_argument('--data_path', type=str, required=True, help="文本数据文件路径")
-    parser.add_argument('--categorical_columns', nargs='+', required=True, help="离散值字段列表")
+    parser.add_argument('--categorical_columns', nargs='*', required=[], help="离散值字段列表")
     parser.add_argument('--continuous_columns', nargs='+', required=True, help="连续值字段列表")
     parser.add_argument('--target_column', type=str, required=True, help="目标值字段")
     parser.add_argument('--test_size', type=float, default=0.2, help="测试集比例")

@@ -221,3 +221,65 @@ python extract_features.py \
     --log_dir "checkpoints" \
     --feature_dir "output"
 ```
+
+3. 当前文件夹中文件组织如图所示
+   ![alt text](mdImage/fille_organization.png)
+
+4. 文件说明：
+   - `data.csv`——混凝土配合比数据，如 "胶砂抗压_28d（MPa）" "胶砂抗折3d（MPa）" 等
+   - `data` 文件夹——存放模拟构造的混凝土微观图像
+   - `input` 文件夹——存放最初测试特征提取的图片
+   - `output` 文件夹——存放最终提取的特征
+  
+5. 图片特征提取运行命令：
+ ```bash
+  python extract_features.py \
+    --input_image data/1.png \
+    --checkpoint mocov3_resnet50_8xb512-amp-coslr-100e_in1k_genview.pth \
+    --model_type genview_resnet50 \
+    --tile_size 512 \
+    --overlap 128 \
+    --batch_size 32 \
+  ```
+6. 更改`extract_features.py`文件的main函数，使其能够自动对文件夹中的所有图像进行特征提取而无需手动指定（当然也可以手动指定）
+   更新后的运行命令如下：
+```bash
+  python extract_features.py \
+    --input_image data \
+    --checkpoint mocov3_resnet50_8xb512-amp-coslr-100e_in1k_genview.pth \
+    --model_type genview_resnet50 \
+    --tile_size 512 \
+    --overlap 128 \
+    --batch_size 32 \
+```
+
+7. 由于更新后的文本数据不存在离散值，因此需要对`utils.py`文件和`model.py`文件进行修改，使其能够正确运行
+8. 同时由于仅模拟生成了100个图像，`data.csv`文件中数据过多，需要删除部分数据仅保留前100个，而全部数据命名为`data_all.csv`
+9. 由于checkpoints太多导致磁盘爆满，因此更新checkpoints的保存原则，改为仅保留10个checkpoints，新来的checkpoints替换掉最旧的checkpoints
+10.  由于测试最初结果不是很理想，因此计划使用房屋数据进行测试，检测是否代码原因导致效果不好
+    ![alt text](mdImage/first_training.png)
+
+    是否是由于将slide_id也作为训练数据进行训练导致效果不好？
+
+### 2025.2.16
+1. 房屋数据集上的运行命令：
+     运行命令：
+  ```bash
+  python utils.py \
+    --data_path "houseData.csv" \
+    --categorical_columns "卧室数量" "浴室数量" "邮编" \
+    --continuous_columns "面积" \
+    --target_column "价格" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 100 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+  ```
+  当前房屋多模态数据集最佳预测结果：
+  ![alt text](mdImage/house_best_prediction.png)
+
+2. 当前混凝土多模态数据集最佳预测结果:
+   ![alt text](mdImage/best_prediction1.png)

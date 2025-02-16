@@ -171,4 +171,19 @@ if __name__ == '__main__':
     parser = get_args_parser()
     args = parser.parse_args()
 
-    extract_features(args)
+    # 判断输入是否为文件夹
+    if os.path.isdir(args.input_image):
+        # 获取所有图像文件（根据需要可以扩展其他扩展名）
+        valid_ext = ('.png', '.jpg', '.jpeg', '.tif', '.tiff')
+        image_files = [
+            os.path.join(args.input_image, f) 
+            for f in os.listdir(args.input_image) 
+            if f.lower().endswith(valid_ext)
+        ]
+        for image_path in image_files:
+            # 为每个图像创建一个临时的命名空间，可以直接修改 args.input_image
+            args.input_image = image_path
+            print(f"正在处理: {image_path}")
+            extract_features(args)
+    else:
+        extract_features(args)

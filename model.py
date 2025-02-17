@@ -75,40 +75,12 @@ class FC_block(nn.Module):
         x = self.drop(x)
         return x
 
-# 分类变量编码模块
-class Categorical_encoding(nn.Module):
-    def __init__(self, taxonomy_in, embedding_dim, depth=1, act_fct='relu', dropout=True, p_dropout=0.25):
-        super(Categorical_encoding, self).__init__()
-        act_fcts = {
-            'relu': nn.ReLU(),
-            'elu': nn.ELU(),
-            'tanh': nn.Tanh(),
-            'selu': nn.SELU(),
-        }
-        dropout_module = nn.AlphaDropout(p_dropout) if act_fct == 'selu' else nn.Dropout(p_dropout)
-        self.embedding = nn.Embedding(taxonomy_in, embedding_dim)
-
-        fc_layers = []
-        for d in range(depth):
-            fc_layers.append(nn.Linear(embedding_dim // (2**d), embedding_dim // (2**(d + 1))))
-            fc_layers.append(dropout_module if dropout else nn.Identity())
-            fc_layers.append(act_fcts[act_fct])
-
-        self.fc_layers = nn.Sequential(*fc_layers)
-
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.fc_layers(x)
-        return x
-
 # 主模型
 class ConcreteAttentionModel(nn.Module):
     def __init__(
         self,
         image_feature_size=524288,
-        text_feature_dim=18,
-        categorical_dims=[10, 3, 3, 3, 3, 10],
-        embedding_dim=128,
+        text_feature_dim=18,          # 连续特征的维度
         feature_size_comp=512,
         feature_size_attn=256,
         dropout=True,
@@ -137,17 +109,6 @@ class ConcreteAttentionModel(nn.Module):
             nn.Dropout(p_dropout_fc)
         )
 
-        # 离散值嵌入处理
-        self.categorical_encodings = nn.ModuleList([
-            Categorical_encoding(dim, embedding_dim, dropout=dropout, p_dropout=p_dropout_fc) for dim in categorical_dims
-        ])
-        # 注意：当 depth=1 时，每个编码器输出维度为 embedding_dim // 2
-        self.text_cat_compression = nn.Sequential(
-            nn.Linear(len(categorical_dims) * (embedding_dim // 2), feature_size_comp),
-            nn.ReLU(),
-            nn.Dropout(p_dropout_fc)
-        )
-
         # 注意力模块
         self.attention_survival_net = AttnNet(
             L=feature_size_comp, D=feature_size_attn, dropout=dropout, p_dropout_atn=p_dropout_atn
@@ -155,14 +116,19 @@ class ConcreteAttentionModel(nn.Module):
 
         # 双模态注意力门控
         self.attn_modalities = Attn_Modality_Gated(
-            gate_h1=gate_hist, gate_h2=gate_text, dim1_og=feature_size_comp, dim2_og=feature_size_comp*2,
-            use_bilinear=use_bilinear, p_dropout_fc=p_dropout_fc
+            gate_h1=gate_hist,
+            gate_h2=gate_text,
+            dim1_og=feature_size_comp,    # 图像分支：512
+            dim2_og=feature_size_comp,    # 文本连续分支：512
+            use_bilinear=use_bilinear,
+            scale=1,
+            p_dropout_fc=p_dropout_fc
         )
 
         # 融合后特征压缩
         if fusion_type == 'kron':
-            # 注意：文本分支实际为 512*2 = 1024 维，所以 kron 融合后维度应为 512 * 1024 = 524288
-            fusion_dim = feature_size_comp * (feature_size_comp * 2)
+            # 文本分支仅为 feature_size_comp 维，融合后维度为 512 * 512 = 262144
+            fusion_dim = feature_size_comp * feature_size_comp
         elif fusion_type == 'concat':
             fusion_dim = feature_size_comp * 2
         else:
@@ -177,17 +143,13 @@ class ConcreteAttentionModel(nn.Module):
         # 回归头
         self.classifier = nn.Linear(feature_size_comp, 1)
 
-    def forward(self, image_features, text_features, categorical_features):
+    def forward(self, image_features, text_features):
         # 图像特征处理
         image_features = self.image_compression(image_features)  # 输入形状 (B, 9, 524288) -> (B, 9, 512)
 
         # 连续值文本特征处理
         text_cont = self.text_continuous_layer(text_features)
-
-        # 离散值处理：对每个离散特征列分别编码
-        text_cat = [enc(categorical_features[:, i]) for i, enc in enumerate(self.categorical_encodings)]
-        text_cat = torch.cat(text_cat, dim=-1)
-        text_cat = self.text_cat_compression(text_cat)
+        combined_text = text_cont
 
         # 图像特征的注意力加权
         A_raw = self.attention_survival_net(image_features)   # A_raw shape: (B, 9, 1)
@@ -195,15 +157,20 @@ class ConcreteAttentionModel(nn.Module):
         # 聚合多个 patch 的图像特征：取平均或求和
         image_features = image_features.mean(dim=1)             # image_features shape: (B, 512)
 
-        # 双模态注意力门控：文本分支为连续特征与离散特征拼接后 (B, 1024)
-        image_features, text_features = self.attn_modalities(image_features, torch.cat([text_cont, text_cat], dim=-1))
+        # 双模态门控融合，只传入图像和文本连续特征
+        image_features, combined_text = self.attn_modalities(image_features, combined_text)
 
         # 特征融合
         if self.fusion_type == 'kron':
-            fused = torch.stack([torch.kron(image_features[i], text_features[i])
-                       for i in range(image_features.size(0))])
+            # print("使用的融合方式是：kron")
+            fused = torch.stack(
+                [torch.kron(image_features[i], combined_text[i])
+                 for i in range(image_features.size(0))], 
+                 dim=0
+            )
         elif self.fusion_type == 'concat':
-            fused = torch.cat([image_features, text_features], dim=-1)
+            # print("使用的融合方式是：concat")
+            fused = torch.cat([image_features, combined_text], dim=-1)
         else:
             raise ValueError("Unsupported fusion type")
 

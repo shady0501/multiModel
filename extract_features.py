@@ -18,15 +18,14 @@ MODEL_NAME_MAP = {
 
 def get_args_parser():
     parser = argparse.ArgumentParser('混凝土微观特征提取', add_help=True)
-    parser.add_argument("--input_image", type=str, required=True, help="输入灰度图像路径")
+    parser.add_argument("--input_image", type=str, required=True, help="输入图像路径")
     parser.add_argument("--output_dir", type=str, default="./output", help="特征保存路径")
     parser.add_argument("--tile_size", type=int, default=512, help="分块大小")
     parser.add_argument("--overlap", type=int, default=128, help="分块重叠大小")
     parser.add_argument("--batch_size", type=int, default=32, help="批量大小")
     parser.add_argument("--model_type", choices=['genview_resnet50', 'genview_vit'], 
                         default='genview_resnet50', help="选择GenView模型类型")
-    parser.add_argument("--checkpoint", type=str, required=True, 
-                        help="预训练权重路径")
+    parser.add_argument("--checkpoint", type=str, required=True, help="预训练权重路径")
     return parser
 
 class MicrostructureDataset(Dataset):
@@ -35,7 +34,7 @@ class MicrostructureDataset(Dataset):
         self.tiles = tiles
         self.tile_size = tile_size
 
-        # 动态设置 Normalize 的 mean 和 std
+        # 使用常见的RGB图像归一化参数
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
 
@@ -54,6 +53,7 @@ class MicrostructureDataset(Dataset):
 
         # 如果图像是单通道，扩展为 3 通道
         if len(tile.shape) == 2:  # 检查是否为灰度图
+            print("单通道图像")
             tile = np.stack([tile] * 3, axis=-1)  # 复制单通道到 3 通道
 
         # 填充到固定大小
@@ -118,20 +118,32 @@ def extract_features(args):
     if not os.path.isfile(args.input_image):
         raise FileNotFoundError(f"无法找到输入图像文件: {args.input_image}")
     
-    # 读取图像
+    # 读取图像（tif/tiff 使用 tifffile，否则使用 skimage.io）
     if args.input_image.endswith(('.tif', '.tiff')):
         img = tifffile.imread(args.input_image).astype(np.uint8)
     else:
         img = io.imread(args.input_image)
-    if img.ndim == 3:
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    # 图像预处理
-    preprocessor = GrayImagePreprocessor(clahe_clip=1.5)
-    processed_img = preprocessor(img)
+    # 判断图像类型：若灰度图（ndim==2或ndim==3且通道数==1），则使用灰度预处理；
+    # 若RGB图（ndim==3且通道数==3），则直接使用RGB图像
+    if img.ndim == 2 or (img.ndim == 3 and img.shape[-1] == 1):
+        # 灰度图处理：如果是 (H,W,1)，squeeze后得到 (H,W)
+        if img.ndim == 3:
+            img = np.squeeze(img, axis=-1)
+        preprocessor = GrayImagePreprocessor(clahe_clip=1.5)
+        processed_img = preprocessor(img)
+        # 此时 processed_img 为单通道灰度图
+    elif img.ndim == 3 and img.shape[-1] == 3:
+        # RGB图像直接使用
+        processed_img = img
+    else:
+        raise ValueError("不支持的图像格式")
 
-    # 生成分块
-    tiles = generate_tiles(img.shape, args.tile_size, args.overlap)
+    # 生成分块，若 processed_img 为灰度图，则形状为 (H,W)，若RGB则取前两个维度
+    if processed_img.ndim == 2:
+        tiles = generate_tiles(processed_img.shape, args.tile_size, args.overlap)
+    else:
+        tiles = generate_tiles(processed_img.shape[:2], args.tile_size, args.overlap)
 
     # 加载GenView模型
     model = load_genview_model(args.model_type, args.checkpoint, device)
@@ -171,17 +183,11 @@ if __name__ == '__main__':
     parser = get_args_parser()
     args = parser.parse_args()
 
-    # 判断输入是否为文件夹
+    # 如果输入为文件夹，则遍历其中所有有效图像文件
     if os.path.isdir(args.input_image):
-        # 获取所有图像文件（根据需要可以扩展其他扩展名）
         valid_ext = ('.png', '.jpg', '.jpeg', '.tif', '.tiff')
-        image_files = [
-            os.path.join(args.input_image, f) 
-            for f in os.listdir(args.input_image) 
-            if f.lower().endswith(valid_ext)
-        ]
+        image_files = [os.path.join(args.input_image, f) for f in os.listdir(args.input_image) if f.lower().endswith(valid_ext)]
         for image_path in image_files:
-            # 为每个图像创建一个临时的命名空间，可以直接修改 args.input_image
             args.input_image = image_path
             print(f"正在处理: {image_path}")
             extract_features(args)

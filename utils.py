@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import random
 import torch
+import glob
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -23,12 +24,11 @@ def seed_worker(worker_id):
 def collate(batch):
     """将一个 batch 内的各样本打包成张量，供 DataLoader 使用。"""
     img_features = torch.stack([item[0] for item in batch], dim=0)  
-    text_cont = torch.stack([item[1] for item in batch], dim=0)     
-    text_cat = torch.stack([item[2] for item in batch], dim=0)      
-    labels = torch.stack([item[3] for item in batch])  # 使用 stack 保持每个标签为一个独立元素
-    slide_ids = [item[4] for item in batch]
-    print("Batch sizes:", img_features.shape, text_cont.shape, text_cat.shape, labels.shape)
-    return [img_features, text_cont, text_cat, labels, slide_ids]
+    text_cont = torch.stack([item[1] for item in batch], dim=0)
+    labels = torch.stack([item[2] for item in batch])  # 使用 stack 保持每个标签为一个独立元素
+    slide_ids = [item[3] for item in batch]
+    # print("Batch sizes:", img_features.shape, text_cont.shape, labels.shape)
+    return [img_features, text_cont, labels, slide_ids]
 
 # ------------------------
 # 自定义数据集类
@@ -38,7 +38,7 @@ class FeatureBagsDataset(Dataset):
     每行文本数据对应一个图片特征文件，以 slide_id 作为拼接文件名的依据。
     """
     def __init__(self, feature_dir, slide_df,
-                 categorical_columns, continuous_columns, target_column,
+                 continuous_columns, target_column,
                  file_prefix="", file_suffix="_features.npz"):
         """
         参数：
@@ -51,7 +51,6 @@ class FeatureBagsDataset(Dataset):
         """
         self.feature_dir = feature_dir
         self.slide_df = slide_df.reset_index(drop=True)
-        self.categorical_columns = categorical_columns
         self.continuous_columns = continuous_columns
         self.target_column = target_column
         self.file_prefix = file_prefix
@@ -75,17 +74,14 @@ class FeatureBagsDataset(Dataset):
         data = np.load(file_path)
         img_feature = torch.tensor(data['features'], dtype=torch.float32)
 
-        # 提取离散和连续特征
+        # 仅提取连续特征（无离散特征）
         continuous_features = torch.tensor(
             row[self.continuous_columns].values, dtype=torch.float32
-        )
-        categorical_features = torch.tensor(
-            row[self.categorical_columns].values.astype(int), dtype=torch.long
         )
         
         label = torch.tensor(float(row[self.target_column]), dtype=torch.float32)
 
-        return img_feature, continuous_features, categorical_features, label, slide_id_int
+        return img_feature, continuous_features, label, slide_id_int
 
 # ------------------------
 # 定义数据加载方式
@@ -147,26 +143,18 @@ class MonitorBestModelEarlyStopping:
             if self.counter >= self.patience and epoch > self.min_epochs:
                 self.early_stop = True
 
-    # def save_checkpoint(self, model, log_dir, epoch):
-    #     os.makedirs(log_dir, exist_ok=True)
-    #     filepath = os.path.join(log_dir, f"{epoch}_checkpoint.pt")
-    #     torch.save(model.state_dict(), filepath)
-    
     def save_checkpoint(self, model, log_dir, epoch):
         os.makedirs(log_dir, exist_ok=True)
-        # 获取所有 checkpoint 文件
+        # 删除所有旧的 checkpoint 文件
         ckpt_files = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if f.endswith("_checkpoint.pt")]
-        # 如果超过 10 个，则删除最旧的文件
-        if len(ckpt_files) >= 10:
-            # 按文件的修改时间排序
-            ckpt_files.sort(key=lambda x: os.path.getmtime(x))
-            oldest_file = ckpt_files[0]
-            os.remove(oldest_file)
-            print(f"Removed oldest checkpoint: {oldest_file}")
+        for file in ckpt_files:
+            os.remove(file)
+            print(f"Removed old checkpoint: {file}")
+        
+        # 保存最新的 checkpoint
         filepath = os.path.join(log_dir, f"{epoch}_checkpoint.pt")
         torch.save(model.state_dict(), filepath, _use_new_zipfile_serialization=False)
         print(f"Saved checkpoint: {filepath}")
-
 
 # ------------------------
 # 评估指标等辅助函数
@@ -189,63 +177,54 @@ def compute_regression_metrics(predictions, targets):
 # ------------------------
 # 文本数据预处理
 # ------------------------
-def preprocess_and_split(data_path, categorical_columns, continuous_columns,
+def preprocess_and_split(data_path, continuous_columns,
                          target_column, test_size=0.2, random_state=42):
-    """
-    读取CSV并进行:
-     1) 若无 slide_id 列则创建(用行号做ID)；若有但为浮点型可稍后再转。
-     2) 对离散特征做 LabelEncoder，对连续特征做 MinMaxScaler。
-     3) 划分训练/测试集，返回 X_train, X_test, y_train, y_test, label_encoders, 以及带 slide_id 的 df。
-    """
     df = pd.read_csv(data_path)
 
-    # 如果 csv 没有 "slide_id" 这一列，可以用行号创建：
+    # 如果 csv 没有 "slide_id" 这一列，用行号创建
     if "slide_id" not in df.columns:
-        df.reset_index(inplace=True)  # 将旧索引变成一列 'index'
+        df.reset_index(inplace=True)
         df.rename(columns={"index": "slide_id"}, inplace=True)
+        print("slide_id 列已自动添加。")
 
-    # 对连续特征做缺失值填充
-    for col in continuous_columns:
+    # 先从连续变量列表中剔除 slide_id
+    norm_columns = [col for col in continuous_columns if col != "slide_id"]
+
+    # 对连续变量（待归一化的部分）填充缺失值
+    for col in norm_columns:
         df[col] = df[col].fillna(df[col].median())
 
-    # 对离散特征做缺失值填充+编码
-    label_encoders = {}
-    for col in categorical_columns:
-        df[col] = df[col].fillna("缺失")
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col].astype(str))
-        label_encoders[col] = le
-
-    # 连续特征归一化
+    # 对连续值归一化操作
     scaler = MinMaxScaler()
-    df[continuous_columns] = scaler.fit_transform(df[continuous_columns])
-
-    # 划分特征和标签 (不包含 slide_id)
-    feature_columns = categorical_columns + continuous_columns
+    df[norm_columns] = scaler.fit_transform(df[norm_columns])
+    # 特征仅为连续变量（无离散特征）
+    feature_columns = continuous_columns
     X = df[feature_columns]
     y = df[target_column]
 
-    # train/test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
-    )
-
-    return X_train, X_test, y_train, y_test, label_encoders, df
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    return X_train, X_test, y_train, y_test, df
 
 # ------------------------
 # 模型训练函数
 # ------------------------
-def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs, log_dir):
-    early_stopping = MonitorBestModelEarlyStopping(patience=15, min_epochs=20, saving_checkpoint=True)
+def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs, log_dir, device, start_epoch=1):
+    early_stopping = MonitorBestModelEarlyStopping(patience=500, min_epochs=500, saving_checkpoint=True)
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, start_epoch + num_epochs):
         model.train()
         train_loss = 0.0
 
         for batch in train_loader:
-            img_features, cont_features, cat_features, labels, _ = batch
+            img_features, cont_features, labels, _ = batch
 
-            predictions = model(img_features, cont_features, cat_features)
+            # 将数据迁移到GPU上
+            img_features = img_features.to(device)
+            cont_features = cont_features.to(device)
+            labels = labels.to(device)
+
+            # 仅传入图片和连续特征
+            predictions = model(img_features, cont_features)
             loss = loss_fn(predictions.squeeze(), labels)
 
             optimizer.zero_grad()
@@ -261,8 +240,14 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
         all_predictions, all_targets = [], []
         with torch.no_grad():
             for batch in val_loader:
-                img_features, cont_features, cat_features, labels, _ = batch
-                preds = model(img_features, cont_features, cat_features)
+                img_features, cont_features, labels, _ = batch
+
+                # 将数据迁移到GPU上
+                img_features = img_features.to(device)
+                cont_features = cont_features.to(device)
+                labels = labels.to(device)
+
+                preds = model(img_features, cont_features)
                 loss_v = loss_fn(preds.squeeze(), labels)
                 val_loss += loss_v.item()
                 all_predictions.extend(preds.cpu().numpy())
@@ -271,7 +256,7 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
         val_loss /= len(val_loader)
         mse, mae, r2 = compute_regression_metrics(all_predictions, all_targets)
 
-        print(f"Epoch {epoch+1}/{num_epochs}, "
+        print(f"Epoch {epoch}/{start_epoch + num_epochs - 1}, "
               f"Train Loss: {train_loss:.6f}, "
               f"Val Loss: {val_loss:.6f}, "
               f"MSE: {mse:.6f}, MAE: {mae:.6f}, R²: {r2:.6f}")
@@ -288,7 +273,7 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
 def parse_args():
     parser = argparse.ArgumentParser(description="混凝土性能预测模型训练")
     parser.add_argument('--data_path', type=str, required=True, help="文本数据文件路径")
-    parser.add_argument('--categorical_columns', nargs='*', required=[], help="离散值字段列表")
+    # parser.add_argument('--categorical_columns', nargs='*', required=[], help="离散值字段列表")
     parser.add_argument('--continuous_columns', nargs='+', required=True, help="连续值字段列表")
     parser.add_argument('--target_column', type=str, required=True, help="目标值字段")
     parser.add_argument('--test_size', type=float, default=0.2, help="测试集比例")
@@ -300,27 +285,58 @@ def parse_args():
     parser.add_argument('--feature_dir', type=str, required=True, help="图片特征文件所在目录")
     return parser.parse_args()
 
+
+def load_checkpoint(model, log_dir):
+    """
+    从 log_dir 中查找 checkpoint 文件，加载最新的 checkpoint。
+    返回加载的 epoch，若没有找到 checkpoint，则返回 0（表示从头开始训练）。
+    """
+    # 查找所有符合命名规则的 checkpoint 文件
+    ckpt_files = glob.glob(os.path.join(log_dir, "*_checkpoint.pt"))
+    if not ckpt_files:
+        print("未找到 checkpoint，重新从头开始训练。")
+        return 0
+
+    # 根据文件名解析出 epoch 数，并选择最新的一个（这里假设文件名为 "{epoch}_checkpoint.pt"）
+    def get_epoch(fp):
+        basename = os.path.basename(fp)
+        try:
+            # 假设文件名为 "12_checkpoint.pt"
+            epoch_str = basename.split('_')[0]
+            return int(epoch_str)
+        except ValueError:
+            return -1
+
+    ckpt_files.sort(key=lambda x: get_epoch(x), reverse=True)
+    latest_ckpt = ckpt_files[0]
+    start_epoch = get_epoch(latest_ckpt)
+    state_dict = torch.load(latest_ckpt)
+    model.load_state_dict(state_dict)
+    print(f"从 {latest_ckpt} 加载模型，恢复到 epoch {start_epoch}")
+    return start_epoch
+
+
 # ------------------------
 # 主程序
 # ------------------------
 if __name__ == "__main__":
     args = parse_args()
+    
+    # 定义设备（GPU 或 CPU）
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     # 1) 文本数据预处理和划分
-    (X_train, X_test,
-     y_train, y_test,
-     label_encoders, df_original) = preprocess_and_split(
-         data_path=args.data_path,
-         categorical_columns=args.categorical_columns,
-         continuous_columns=args.continuous_columns,
-         target_column=args.target_column,
-         test_size=args.test_size,
-         random_state=args.random_state,
+    X_train, X_test, y_train, y_test, df_original = preprocess_and_split(
+        data_path=args.data_path,
+        continuous_columns=args.continuous_columns,
+        target_column=args.target_column,
+        test_size=args.test_size,
+        random_state=args.random_state,
     )
 
     # 2) 组建 train_df / test_df，并让它们带有 slide_id
     train_df = pd.concat([X_train, y_train], axis=1)
-    # slide_id 对应 X_train.index
     train_df["slide_id"] = df_original["slide_id"].loc[X_train.index].values
 
     test_df = pd.concat([X_test, y_test], axis=1)
@@ -330,7 +346,6 @@ if __name__ == "__main__":
     train_dataset = FeatureBagsDataset(
         feature_dir=args.feature_dir,
         slide_df=train_df,
-        categorical_columns=args.categorical_columns,
         continuous_columns=args.continuous_columns,
         target_column=args.target_column
     )
@@ -338,7 +353,6 @@ if __name__ == "__main__":
     val_dataset = FeatureBagsDataset(
         feature_dir=args.feature_dir,
         slide_df=test_df,
-        categorical_columns=args.categorical_columns,
         continuous_columns=args.continuous_columns,
         target_column=args.target_column
     )
@@ -347,19 +361,11 @@ if __name__ == "__main__":
     train_loader, val_loader = define_data_sampling(
         args.batch_size, train_dataset, val_dataset, method="random", workers=args.num_workers
     )
-
-    # 5) 计算离散特征的类别维度
-    categorical_dims = [
-        len(label_encoders[col].classes_)
-        for col in args.categorical_columns
-    ]
-
-    # 6) 初始化模型 (根据你的实际设计调整)
+    
+    # 5) 初始化模型
     model = ConcreteAttentionModel(
         image_feature_size=524288,
         text_feature_dim=len(args.continuous_columns),
-        categorical_dims=categorical_dims,
-        embedding_dim=128,
         feature_size_comp=512,
         feature_size_attn=256,
         dropout=True,
@@ -369,18 +375,29 @@ if __name__ == "__main__":
         use_bilinear=True,
         gate_hist=True,
         gate_text=True,
-    )
+    ).to(device)
 
-    # 7) 优化器和损失函数
+    # 6) 优化器和损失函数
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = torch.nn.MSELoss()
 
+    # 7) 尝试加载 checkpoint，获取上次保存的 epoch（如果存在）
+    if os.path.exists(args.log_dir):
+        last_epoch = load_checkpoint(model, args.log_dir)
+    else:
+        last_epoch = 0
+
     # 8) 开始训练
     train_model(
-        model, train_loader, val_loader,
-        optimizer, loss_fn,
+        model, 
+        train_loader, 
+        val_loader,
+        optimizer, 
+        loss_fn,
         num_epochs=args.num_epochs,
-        log_dir=args.log_dir
+        log_dir=args.log_dir,
+        device=device,
+        start_epoch=last_epoch + 1  # 续训从上次 epoch 的下一个 epoch 开始
     )
-
+    
     print("successful")

@@ -259,8 +259,6 @@ python extract_features.py \
 10.  由于测试最初结果不是很理想，因此计划使用房屋数据进行测试，检测是否代码原因导致效果不好
     ![alt text](mdImage/first_training.png)
 
-    是否是由于将slide_id也作为训练数据进行训练导致效果不好？
-
 ### 2025.2.16
 1. 房屋数据集上的运行命令：
      运行命令：
@@ -282,4 +280,60 @@ python extract_features.py \
   ![alt text](mdImage/house_best_prediction.png)
 
 2. 当前混凝土多模态数据集最佳预测结果:
-   ![alt text](mdImage/best_prediction1.png)
+   ![alt text](mdImage//best_prediction2.16.png)
+
+### 2025.2.17
+1. 调整epoch为500，运行命令为：
+```bash
+  python utils.py \
+    --data_path "data.csv" \
+    --continuous_columns "slide_id" "水用量（kg/m3）" "水泥矿物组分_C3S（%）" "水泥矿物组分_C2S（%）" "水泥矿物组分_C3A（%）" "水泥矿物组分_C4AF（%）" "胶砂抗压_7d（MPa）" "胶砂抗压_28d（MPa）" "胶砂抗折3d（MPa）" "胶砂抗折7d（MPa）" "胶砂抗折_28d（MPa）" "水化热_1d（J/g）" "水化热_3d（J/g）" "水化热_7d（J/g）" "水泥用量（kg/m3）" "FA化学组分_SiO2（%）" "FA化学组分_Al2O3（%）" "FA化学组分_Fe2O3（%）" "FA化学组分_CaO（%）" "粉煤灰用量（kg/m3）" "砂表观密度（kg/m3）" "砂用量（kg/m3）" "石1坚固性（%）" "石1压碎指标（%）" "石1用量（kg/m3）" "石2坚固性（%）" "石2压碎指标（%）" "石2用量（kg/m3）" "石3坚固性（%）" "石3压碎指标（%）" "石3用量（kg/m3）" "外加剂1用量（%）" "外加剂2用量（%）" \
+    --target_column "28d抗压强度" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 500 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+```
+结果仍然不太理想，目前没训完最佳R²: 0.54410
+![alt text](mdImage/best_prediction2.17.png)
+
+训完最佳R²: 0.570013
+![alt text](mdImage/best_prediction2.17_kron.png)
+
+1. 使用纯文本表格数据进行预测，最佳R²: 0.884445
+   ![alt text](mdImage/best_prediction_onlyText2.16.png)
+
+2. 将`extract_features.py`文件中灰度图的特征提取改为RGB图的特征提取
+   
+3. 将`utils.py`文件中加入使用GPU训练
+   
+4. 将`model.py`文件中kron融合方式替换为concat融合方式，并改为RGB图像特征提取，最佳R²: 0.528388
+   ![alt text](mdImage/best_prediction2.17_concat.png)
+
+5. 改为RGB图像特征提取，kron融合方式，最佳R²: 0.611724
+   ![alt text](mdImage/best_prediction2.17_kron_RGB.png)
+
+6. 将百分比数据换为小数，如 54% -> 0.54，处理后的数据为`data_processed.csv`
+   
+  ```bash
+  python utils.py \
+    --data_path "data_processed.csv" \
+    --continuous_columns "slide_id" "水用量（kg/m3）" "水泥矿物组分_C3S（%）" "水泥矿物组分_C2S（%）" "水泥矿物组分_C3A（%）" "水泥矿物组分_C4AF（%）" "胶砂抗压_7d（MPa）" "胶砂抗压_28d（MPa）" "胶砂抗折3d（MPa）" "胶砂抗折7d（MPa）" "胶砂抗折_28d（MPa）" "水化热_1d（J/g）" "水化热_3d（J/g）" "水化热_7d（J/g）" "水泥用量（kg/m3）" "FA化学组分_SiO2（%）" "FA化学组分_Al2O3（%）" "FA化学组分_Fe2O3（%）" "FA化学组分_CaO（%）" "粉煤灰用量（kg/m3）" "砂表观密度（kg/m3）" "砂用量（kg/m3）" "石1坚固性（%）" "石1压碎指标（%）" "石1用量（kg/m3）" "石2坚固性（%）" "石2压碎指标（%）" "石2用量（kg/m3）" "石3坚固性（%）" "石3压碎指标（%）" "石3用量（kg/m3）" "外加剂1用量（%）" "外加剂2用量（%）" \
+    --target_column "28d抗压强度" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 500 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+  ```
+7. 加入对连续值的归一化步骤，最佳R²: 0.535195
+   ![alt text](mdImage/best_prediction2.17_kron_RGB_scaler.png)
+
+8. 彻底去除离散值输入在代码中的影响，使用kron重新训练，最佳R²: 0.577595
+   ![alt text](mdImage/best_prediction2.17_kron_RGB_scaler2.png)
+9.  可以考虑看看纯图像预测效果如何

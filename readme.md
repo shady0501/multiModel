@@ -336,4 +336,8 @@ python extract_features.py \
 
 8. 彻底去除离散值输入在代码中的影响，使用kron重新训练，最佳R²: 0.577595
    ![alt text](mdImage/best_prediction2.17_kron_RGB_scaler2.png)
+
+   在上面这次的基础上载入checkpoint，继续训练，最佳R²: 0.672822
+   ![alt text](mdImage/best_prediction2.17_kron_RGB_scaler3.png)
+
 9.  可以考虑看看纯图像预测效果如何

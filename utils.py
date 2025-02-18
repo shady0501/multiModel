@@ -5,6 +5,7 @@ import pandas as pd
 import random
 import torch
 import glob
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -209,7 +210,23 @@ def preprocess_and_split(data_path, continuous_columns,
 # 模型训练函数
 # ------------------------
 def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs, log_dir, device, start_epoch=1):
-    early_stopping = MonitorBestModelEarlyStopping(patience=500, min_epochs=500, saving_checkpoint=True)
+    early_stopping = MonitorBestModelEarlyStopping(patience=5000, min_epochs=5000, saving_checkpoint=True)
+
+    # 用于保存 MSE, MAE, R² 的值
+    mse_values = []
+    mae_values = []
+    r2_values = []
+    train_loss_values = []
+    val_loss_values = []
+    epoch_num = start_epoch + num_epochs - 1  # 默认最后一个epoch
+
+    # 用于记录最佳R²及对应的训练信息
+    best_r2 = -float('inf')
+    best_epoch = start_epoch
+    best_train_loss = None
+    best_val_loss = None
+    best_mse = None
+    best_mae = None
 
     for epoch in range(start_epoch, start_epoch + num_epochs):
         model.train()
@@ -256,16 +273,81 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
         val_loss /= len(val_loader)
         mse, mae, r2 = compute_regression_metrics(all_predictions, all_targets)
 
+        # 存储每个epoch的MSE、MAE、R²
+        mse_values.append(mse)
+        mae_values.append(mae)
+        r2_values.append(r2)
+        train_loss_values.append(train_loss)
+        val_loss_values.append(val_loss)
+
         print(f"Epoch {epoch}/{start_epoch + num_epochs - 1}, "
               f"Train Loss: {train_loss:.6f}, "
               f"Val Loss: {val_loss:.6f}, "
               f"MSE: {mse:.6f}, MAE: {mae:.6f}, R²: {r2:.6f}")
+        
+        # 更新最佳指标：以R²为标准
+        if r2 > best_r2:
+            best_r2 = r2
+            best_epoch = epoch
+            best_train_loss = train_loss
+            best_val_loss = val_loss
+            best_mse = mse
+            best_mae = mae
 
         # 早停检查
         early_stopping(epoch, val_loss, model, log_dir)
         if early_stopping.early_stop:
+            epoch_num = epoch
             print("Early stopping triggered.")
             break
+    
+    # 绘图时，x轴使用从 start_epoch 到 epoch_num（包括epoch_num）的范围
+    x_axis = list(range(start_epoch, epoch_num + 1))
+
+    # 训练结束后绘制指标
+    plt.figure(figsize=(10, 6))
+
+    # 绘制 MSE 曲线
+    plt.plot(x_axis, mse_values, label='MSE', color='red')
+    # 绘制 MAE 曲线
+    plt.plot(x_axis, mae_values, label='MAE', color='blue')
+    # 绘制 R² 曲线
+    plt.plot(x_axis, r2_values, label='R²', color='green')
+
+    # 添加标题和标签
+    plt.title('Training Process Metrics')
+    plt.xlabel('Epochs')
+    plt.ylabel('Metric Values')
+    plt.legend()
+
+    # 保存图像
+    plt.grid(True)
+    plt.savefig("Training_Process_Metrics.png")
+    plt.close()
+
+    # 绘制 Train Loss 和 Val Loss
+    plt.figure(figsize=(10, 6))
+    
+    # 绘制训练损失曲线
+    plt.plot(x_axis, train_loss_values, label='Train Loss', color='orange')
+    # 绘制验证损失曲线
+    plt.plot(x_axis, val_loss_values, label='Val Loss', color='purple')
+
+    # 添加标题和标签
+    plt.title('Train Loss and Val Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # 显示图像
+    plt.grid(True)
+    plt.savefig("Train_Val_Loss.png")
+    plt.close()
+
+    # 在训练结束后，输出最佳R²对应的Epoch信息
+    print(f"训练结束后最佳R²出现在Epoch {best_epoch}/{epoch_num}, "
+          f"Train Loss: {best_train_loss:.6f}, Val Loss: {best_val_loss:.6f}, "
+          f"MSE: {best_mse:.6f}, MAE: {best_mae:.6f}, R²: {best_r2:.6f}")
 
 # ------------------------
 # 参数解析

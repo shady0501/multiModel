@@ -90,7 +90,7 @@ class ConcreteAttentionModel(nn.Module):
         # fusion_type='concat',
         use_bilinear=True,
         gate_hist=True,
-        gate_text=True,
+        gate_text=True,     # 设为False后，文本特征不会再被图像特征影响
     ):
         super(ConcreteAttentionModel, self).__init__()
         self.fusion_type = fusion_type

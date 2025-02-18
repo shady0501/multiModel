@@ -53,6 +53,17 @@ python extract_features.py \
 - `utils.py`
 - `models.py`
 
+### 3.3 模型函数说明
+1. AttnNet
+   - 针对单模态内部做多实例注意力聚合：给每个 patch/切片加权后再聚合，用来突出重要区域或局部特征。
+2. Attn_Modality_Gated
+   - 在两模态之间做互相门控，学习到一方特征如何抑制/加强另一方信息，从而得到更具交互性的特征表征。
+3. FC_block
+   - 仅是一个线性 + 激活 + dropout 的简单封装，方便反复使用，在主模型里可以将这种常见操作进一步抽象出来。
+4. Kron vs. Concat
+   - Concat：拼接到一起，简单高效，表达力有限，输出维度较小（线性增加）。
+   - Kron：构造了 (dim1 * dim2) 维，显式捕捉所有 pairwise 交互，表达力更高，维度暴涨，资源消耗更大。
+
 ---
 
 # 4. 开发日志
@@ -327,7 +338,7 @@ python extract_features.py \
     --random_state 42 \
     --batch_size 32 \
     --num_workers 4 \
-    --num_epochs 500 \
+    --num_epochs 5000 \
     --log_dir "checkpoints" \
     --feature_dir "output"
   ```
@@ -341,3 +352,11 @@ python extract_features.py \
    ![alt text](mdImage/best_prediction2.17_kron_RGB_scaler3.png)
 
 9.  可以考虑看看纯图像预测效果如何
+
+### 2025.2.18
+1. 加大训练次数，训练10000次，目前最佳R²: 0.770671（估计也是最佳状态了，3小时后5600多轮没有一个高于这个的T_T）
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler.png)
+
+2. 尝试更改门控，仅允许图像特征根据文本特征的内容动态调整，而不允许文本特征根据图像特征动态调整
+   
+3. 保存训练时图像

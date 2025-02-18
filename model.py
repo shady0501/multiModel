@@ -90,7 +90,7 @@ class ConcreteAttentionModel(nn.Module):
         # fusion_type='concat',
         use_bilinear=True,
         gate_hist=True,
-        gate_text=True,     # 设为False后，文本特征不会再被图像特征影响
+        gate_text=False,     # 设为False后，文本特征不会再被图像特征影响
     ):
         super(ConcreteAttentionModel, self).__init__()
         self.fusion_type = fusion_type
@@ -143,13 +143,13 @@ class ConcreteAttentionModel(nn.Module):
         # 回归头
         self.classifier = nn.Linear(feature_size_comp, 1)
 
-    def forward(self, image_features, text_features):
+    def forward(self, image_features, text_features, return_emb=False):
+        """
+        新增参数:
+            return_emb: 若为 True，则在返回中额外提供 image_emb 和 text_emb
+        """
         # 图像特征处理
         image_features = self.image_compression(image_features)  # 输入形状 (B, 9, 524288) -> (B, 9, 512)
-
-        # 连续值文本特征处理
-        text_cont = self.text_continuous_layer(text_features)
-        combined_text = text_cont
 
         # 图像特征的注意力加权
         A_raw = self.attention_survival_net(image_features)   # A_raw shape: (B, 9, 1)
@@ -157,8 +157,16 @@ class ConcreteAttentionModel(nn.Module):
         # 聚合多个 patch 的图像特征：取平均或求和
         image_features = image_features.mean(dim=1)             # image_features shape: (B, 512)
 
+        # 连续值文本特征处理
+        text_cont = self.text_continuous_layer(text_features)
+        combined_text = text_cont
+
         # 双模态门控融合，只传入图像和文本连续特征
         image_features, combined_text = self.attn_modalities(image_features, combined_text)
+
+        # 返回融合前图像文本特征：image_emb, text_emb 均是 (B, 512)
+        image_emb = image_features
+        text_emb = combined_text
 
         # 特征融合
         if self.fusion_type == 'kron':
@@ -179,4 +187,8 @@ class ConcreteAttentionModel(nn.Module):
 
         # 输出预测
         output = self.classifier(fused)
-        return output
+
+        if return_emb:
+            return output, image_emb, text_emb
+        else:
+            return output

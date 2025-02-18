@@ -175,6 +175,21 @@ def compute_regression_metrics(predictions, targets):
     r2 = r2_score(targets, predictions)
     return mse, mae, r2
 
+def orthogonal_loss(emb1, emb2, alpha_l1=0.01, alpha_l2=0.01):
+    """
+    emb1, emb2: shape (batch_size, dim)
+    同时包含 L1 和 L2 惩罚，让 emb1 · emb2 尽量接近 0
+    若只想用 L2，可将 alpha_l1=0; 只想用 L1，可将 alpha_l2=0
+    """
+    # 点积: (B,)
+    dot = torch.sum(emb1 * emb2, dim=-1)
+    # L1 = mean(|dot|)
+    l1_val = torch.mean(torch.abs(dot))
+    # L2 = mean(dot^2)
+    l2_val = torch.mean(dot ** 2)
+
+    return alpha_l1 * l1_val + alpha_l2 * l2_val
+
 # ------------------------
 # 文本数据预处理
 # ------------------------
@@ -212,6 +227,10 @@ def preprocess_and_split(data_path, continuous_columns,
 def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs, log_dir, device, start_epoch=1):
     early_stopping = MonitorBestModelEarlyStopping(patience=5000, min_epochs=5000, saving_checkpoint=True)
 
+    # 定义 alpha_l1, alpha_l2 用于 L1, L2 惩罚，使两个特征尽量保持正交学习更多互补的特征
+    alpha_l1 = 0.01
+    alpha_l2 = 0.01
+
     # 用于保存 MSE, MAE, R² 的值
     mse_values = []
     mae_values = []
@@ -241,8 +260,12 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
             labels = labels.to(device)
 
             # 仅传入图片和连续特征
-            predictions = model(img_features, cont_features)
+            predictions, emb_img, emb_txt = model(img_features, cont_features, return_emb=True)
             loss = loss_fn(predictions.squeeze(), labels)
+
+            # 计算正交损失，叠加到总loss中
+            loss_orth = orthogonal_loss(emb_img, emb_txt, alpha_l1=alpha_l1, alpha_l2=alpha_l2)
+            loss = loss + loss_orth
 
             optimizer.zero_grad()
             loss.backward()
@@ -311,18 +334,39 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
     plt.plot(x_axis, mse_values, label='MSE', color='red')
     # 绘制 MAE 曲线
     plt.plot(x_axis, mae_values, label='MAE', color='blue')
-    # 绘制 R² 曲线
-    plt.plot(x_axis, r2_values, label='R²', color='green')
 
     # 添加标题和标签
     plt.title('Training Process Metrics')
     plt.xlabel('Epochs')
     plt.ylabel('Metric Values')
+
+    # 设置横坐标每 100 为间隔
+    plt.xticks(np.arange(min(x_axis), max(x_axis) + 1, 100))
     plt.legend()
 
     # 保存图像
     plt.grid(True)
     plt.savefig("Training_Process_Metrics.png")
+    plt.close()
+
+    # 训练结束后绘制 R² 指标
+    plt.figure(figsize=(10, 6))
+
+    # 绘制 R² 曲线
+    plt.plot(x_axis, r2_values, label='R²', color='green')
+
+    # 添加标题和标签
+    plt.title('Coefficient of Determination (R²)')
+    plt.xlabel('Epochs')
+    plt.ylabel('R² Values')
+
+    # 设置横坐标每 100 为间隔
+    plt.xticks(np.arange(min(x_axis), max(x_axis) + 1, 100))
+    plt.legend()
+
+    # 保存图像
+    plt.grid(True)
+    plt.savefig("Coefficient_of_Determination(R²).png")
     plt.close()
 
     # 绘制 Train Loss 和 Val Loss
@@ -337,6 +381,9 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
     plt.title('Train Loss and Val Loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
+    
+    # 设置横坐标每 100 为间隔
+    plt.xticks(np.arange(min(x_axis), max(x_axis) + 1, 100))
     plt.legend()
 
     # 显示图像

@@ -338,7 +338,7 @@ python extract_features.py \
     --random_state 42 \
     --batch_size 32 \
     --num_workers 4 \
-    --num_epochs 5000 \
+    --num_epochs 10000 \
     --log_dir "checkpoints" \
     --feature_dir "output"
   ```
@@ -354,9 +354,20 @@ python extract_features.py \
 9.  可以考虑看看纯图像预测效果如何
 
 ### 2025.2.18
-1. 加大训练次数，训练10000次，目前最佳R²: 0.770671（估计也是最佳状态了，3小时后5600多轮没有一个高于这个的T_T）
+1. 加大训练次数，训练10000次，目前最佳**R²: 0.770671**（估计也是最佳状态了，3小时后5600多轮没有一个高于这个的T_T）
    ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler.png)
 
-2. 尝试更改门控，仅允许图像特征根据文本特征的内容动态调整，而不允许文本特征根据图像特征动态调整
+2. 尝试更改门控，仅允许图像特征根据文本特征的内容动态调整，而不允许文本特征根据图像特征动态调整，仅训练5000轮，  
+   训练结束后最佳R²出现在Epoch 3560/5000, Train Loss: 7.174438, Val Loss: 26.866144, MSE: 26.866144, MAE: 4.112032, **R²: 0.760969**  
+   下面是5000次训练过程中的训练指标和损失变化曲线  
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler_gate-text.png)
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler_gate-text_training-metrics.png)
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler_gate-text_loss.png)
    
-3. 保存训练时图像
+3. 保存训练时损失、评估指标等的图像
+   
+4. 融合OSF（Orthogonal Sequential Fusion，正交序列融合）思想，参考文献：**Labbaki, Sami** & **Minary, Peter** (2024). *Orthogonal Sequential Fusion in Multimodal Learning*. [阅读原文](https://openreview.net/forum?id=XuNkuoihgG)  
+   在保持仅允许图像特征根据文本特征的内容动态调整，而不允许文本特征根据图像特征动态调整，仅训练500轮，直观感受就是损失下降很快，R² 很快就能上升到0.3、0.4的水平，  
+   训练结束后最佳R²出现在Epoch 427/428, Train Loss: 11.227631, Val Loss: 52.143616, MSE: 52.143612, MAE: 5.884242, R²: 0.536072
+
+5. 单独将 R² 画成一个图，方便观察训练过程

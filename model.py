@@ -89,7 +89,7 @@ class ConcreteAttentionModel(nn.Module):
         fusion_type='kron',
         # fusion_type='concat',
         use_bilinear=True,
-        gate_hist=True,
+        gate_hist=False,     # 设为False后，图像特征不会再被文本特征影响
         gate_text=False,     # 设为False后，文本特征不会再被图像特征影响
     ):
         super(ConcreteAttentionModel, self).__init__()
@@ -127,8 +127,11 @@ class ConcreteAttentionModel(nn.Module):
 
         # 融合后特征压缩
         if fusion_type == 'kron':
-            # 文本分支仅为 feature_size_comp 维，融合后维度为 512 * 512 = 262144
-            fusion_dim = feature_size_comp * feature_size_comp
+            # # 文本分支仅为 feature_size_comp 维，融合后维度为 512 * 512 = 262144
+            # fusion_dim = feature_size_comp * feature_size_comp
+
+            # 单独使用图像/文本特征预测
+            fusion_dim = feature_size_comp
         elif fusion_type == 'concat':
             fusion_dim = feature_size_comp * 2
         else:
@@ -182,8 +185,14 @@ class ConcreteAttentionModel(nn.Module):
         else:
             raise ValueError("Unsupported fusion type")
 
-        # 融合特征后处理
-        fused = self.post_fusion_layer(fused)
+        # # 融合特征后处理
+        # fused = self.post_fusion_layer(fused)
+
+        # # 单独使用图像特征预测
+        # fused = self.post_fusion_layer(image_features)
+
+        # 单独使用文本特征预测
+        fused = self.post_fusion_layer(combined_text)
 
         # 输出预测
         output = self.classifier(fused)

@@ -263,9 +263,9 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
             predictions, emb_img, emb_txt = model(img_features, cont_features, return_emb=True)
             loss = loss_fn(predictions.squeeze(), labels)
 
-            # 计算正交损失，叠加到总loss中
-            loss_orth = orthogonal_loss(emb_img, emb_txt, alpha_l1=alpha_l1, alpha_l2=alpha_l2)
-            loss = loss + loss_orth
+            # # 计算正交损失，叠加到总loss中
+            # loss_orth = orthogonal_loss(emb_img, emb_txt, alpha_l1=alpha_l1, alpha_l2=alpha_l2)
+            # loss = loss + loss_orth
 
             optimizer.zero_grad()
             loss.backward()
@@ -340,8 +340,14 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
     plt.xlabel('Epochs')
     plt.ylabel('Metric Values')
 
-    # 设置横坐标每 100 为间隔
-    plt.xticks(np.arange(min(x_axis), max(x_axis) + 1, 100))
+    # 设置横坐标刻度和分割线，每隔 100 画一条
+    ticks = np.arange(min(x_axis), max(x_axis) + 1, 100)
+    plt.xticks(ticks)
+
+    # 手动设置刻度标签：只有刻度值为 500 的倍数时显示数字
+    labels = [str(tick) if tick % 500 == 0 else '' for tick in ticks]
+    plt.gca().set_xticklabels(labels)
+
     plt.legend()
 
     # 保存图像
@@ -360,8 +366,14 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
     plt.xlabel('Epochs')
     plt.ylabel('R² Values')
 
-    # 设置横坐标每 100 为间隔
-    plt.xticks(np.arange(min(x_axis), max(x_axis) + 1, 100))
+    # 设置横坐标刻度和分割线，每隔 100 画一条
+    ticks = np.arange(min(x_axis), max(x_axis) + 1, 100)
+    plt.xticks(ticks)
+
+    # 手动设置刻度标签：只有刻度值为 500 的倍数时显示数字
+    labels = [str(tick) if tick % 500 == 0 else '' for tick in ticks]
+    plt.gca().set_xticklabels(labels)
+
     plt.legend()
 
     # 保存图像
@@ -381,9 +393,15 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
     plt.title('Train Loss and Val Loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
-    
-    # 设置横坐标每 100 为间隔
-    plt.xticks(np.arange(min(x_axis), max(x_axis) + 1, 100))
+
+    # 设置横坐标刻度和分割线，每隔 100 画一条
+    ticks = np.arange(min(x_axis), max(x_axis) + 1, 100)
+    plt.xticks(ticks)
+
+    # 手动设置刻度标签：只有刻度值为 500 的倍数时显示数字
+    labels = [str(tick) if tick % 500 == 0 else '' for tick in ticks]
+    plt.gca().set_xticklabels(labels)
+
     plt.legend()
 
     # 显示图像

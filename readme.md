@@ -315,7 +315,7 @@ python extract_features.py \
 ![alt text](mdImage/best_prediction2.17_kron.png)
 
 1. 使用纯文本表格数据进行预测，最佳R²: 0.884445
-   ![alt text](mdImage/best_prediction_onlyText2.16.png)
+   ![alt text](mdImage/best_prediction2.16_onlyText.png)
 
 2. 将`extract_features.py`文件中灰度图的特征提取改为RGB图的特征提取
    
@@ -338,7 +338,7 @@ python extract_features.py \
     --random_state 42 \
     --batch_size 32 \
     --num_workers 4 \
-    --num_epochs 10000 \
+    --num_epochs 5000 \
     --log_dir "checkpoints" \
     --feature_dir "output"
   ```
@@ -350,8 +350,6 @@ python extract_features.py \
 
    在上面这次的基础上载入checkpoint，继续训练，最佳R²: 0.672822
    ![alt text](mdImage/best_prediction2.17_kron_RGB_scaler3.png)
-
-9.  可以考虑看看纯图像预测效果如何
 
 ### 2025.2.18
 1. 加大训练次数，训练10000次，目前最佳**R²: 0.770671**（估计也是最佳状态了，3小时后5600多轮没有一个高于这个的T_T）
@@ -370,4 +368,38 @@ python extract_features.py \
    在保持仅允许图像特征根据文本特征的内容动态调整，而不允许文本特征根据图像特征动态调整，仅训练500轮，直观感受就是损失下降很快，R² 很快就能上升到0.3、0.4的水平，  
    训练结束后最佳R²出现在Epoch 427/428, Train Loss: 11.227631, Val Loss: 52.143616, MSE: 52.143612, MAE: 5.884242, R²: 0.536072
 
+   训练12000轮，由于5000轮未出现更优触发早停机制，训练结束后最佳R²出现在Epoch 5981/10981, Train Loss: 2.905519, Val Loss: 23.483797, MSE: 23.483796, MAE: 3.844087, **R²: 0.791062**  
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler_gate-text_OSF_loss.png)
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler_gate-text_OSF_R^2.png)
+   ![alt text](mdImage/best_prediction2.18_kron_RGB_scaler_gate-text_OSF_training-metrics.png)
+
 5. 单独将 R² 画成一个图，方便观察训练过程
+   
+### 2025.2.19
+1.  可以考虑看看纯图像预测效果如何，不允许图像特征根据文本特征调整，  
+   训练结束后最佳R²出现在Epoch 4934/5000, Train Loss: 3.982477, Val Loss: 36.994698, MSE: 36.994695, MAE: 4.521901, **R²: 0.670854**  
+   ![alt text](mdImage/best_prediction2.19_onlyImage_loss.png)
+   ![alt text](mdImage/best_prediction2.19_onlyImage_R^2.png)
+   ![alt text](mdImage/best_prediction2.19_onlyImage_training-metrics.png)
+   
+2.  优化绘图坐标标签
+   
+3.  全关gate使用OSF，  
+   训练结束后最佳R²出现在Epoch 3374/5000, Train Loss: 3.986423, Val Loss: 26.212183, MSE: 26.212182, MAE: 3.857293, **R²: 0.766787**  
+   ![alt text](mdImage/best_prediction2.19_nogate_OSF_loss.png)
+   ![alt text](mdImage/best_prediction2.19_nogate_OSF_R^2.png)
+   ![alt text](mdImage/best_prediction2.19_nogate_OSF_training-metrics.png)
+
+4.  全开gate使用OSF，  
+   训练结束后最佳R²出现在Epoch 3838/5000, Train Loss: 4.231354, Val Loss: 26.858631, MSE: 26.858630, MAE: 4.058580, **R²: 0.761035**
+   ![alt text](mdImage/best_prediction2.19_allgate_OSF_loss.png)
+   ![alt text](mdImage/best_prediction2.19_allgate_OSF_R^2.png)
+   ![alt text](mdImage/best_prediction2.19_allgate_OSF_training-metrics.png)
+
+5. 继续模拟图像数据，从原来100张增加至现在的200张
+   
+6. 使用纯文本表格数据进行预测，图像文本特征互不影响，训练5000轮后，  
+   训练结束后最佳R²出现在Epoch 1819/5000, Train Loss: 13.984750, Val Loss: 2.017839, MSE: 2.017839, MAE: 1.176800, **R²: 0.982047**
+   ![alt text](mdImage/best_prediction2.19_onlytext_nogate_loss.png)
+   ![alt text](mdImage/best_prediction2.19_onlytext_nogate_R^2.png)
+   ![alt text](mdImage/best_prediction2.19_onlytext_nogate_training-metrics.png)

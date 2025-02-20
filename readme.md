@@ -58,6 +58,9 @@ python extract_features.py \
    - 针对单模态内部做多实例注意力聚合：给每个 patch/切片加权后再聚合，用来突出重要区域或局部特征。
 2. Attn_Modality_Gated
    - 在两模态之间做互相门控，学习到一方特征如何抑制/加强另一方信息，从而得到更具交互性的特征表征。
+   - 详细说明
+     - 文本特征输入后，经过 linear_h1 线性映射和 ReLU 激活，得到中间特征 h1，然后使用 linear_z1 计算门控信号 z1(通过双线性层同时处理文本特征和图像特征)，经过 Sigmoid 函数映射到 [0,1] 区间，得到调制系数,与 h1 元素级相乘，再经过 linear_o1（包括线性映射、ReLU 和 Dropout）生成最终输出 o1，即经过调整后的文本特征
+     - 两种模态的特征输入，对其进行线性变换和ReLU激活函数，分别得到两个对应的中间特征hi，然后通过双线性层，即通过 Output = x^T · W · y + b 这个公式，W权重矩阵随机初始化后，根据训练过程中反向传播算法不断调整，收敛至能够最好捕捉输入之间交互关系的数值，然后输出计算后的一个新的表示向量（若x形状为(N,n)，y形状为(N,m)，输出向量形状为(N,p)，p为指定的输出维度），然后将这个表示向量经过 Sigmoid 函数映射到 [0,1] 区间，从而得到调制系数，再将这个调制系数即门控权重和前面的中间特征hi元素级相乘，再经过线性变换、ReLU激活函数和Dropout随机丢弃一些神经元防止过拟合，从而最终得到经过另一种模态特征影响的本模态特征
 3. FC_block
    - 仅是一个线性 + 激活 + dropout 的简单封装，方便反复使用，在主模型里可以将这种常见操作进一步抽象出来。
 4. Kron vs. Concat
@@ -211,7 +214,6 @@ python extract_features.py \
 1. 白色——水泥熟料——关键强度指标——含量与强度负相关
 2. 黑色圆形——粉煤灰——当前不考虑
 3. 黑色——C-S-H——含量与强度正相关
-![alt text](mdImage/microscopic_image.png)
 
 ### 2025.2.13——2025.2.14
 使用VCCTL软件模拟构造100个混凝土微观图像，见`data/xxx.png`
@@ -403,3 +405,47 @@ python extract_features.py \
    ![alt text](mdImage/best_prediction2.19_onlytext_nogate_loss.png)
    ![alt text](mdImage/best_prediction2.19_onlytext_nogate_R^2.png)
    ![alt text](mdImage/best_prediction2.19_onlytext_nogate_training-metrics.png)
+
+7. 尝试使用全部977条数据进行预测，训练10000轮
+   前200条数据为图文数据，后877条图像用空张量填充
+      
+  ```bash
+  python utils.py \
+    --data_path "data_all_processed.csv" \
+    --continuous_columns "slide_id" "水用量（kg/m3）" "水泥矿物组分_C3S（%）" "水泥矿物组分_C2S（%）" "水泥矿物组分_C3A（%）" "水泥矿物组分_C4AF（%）" "胶砂抗压_7d（MPa）" "胶砂抗压_28d（MPa）" "胶砂抗折3d（MPa）" "胶砂抗折7d（MPa）" "胶砂抗折_28d（MPa）" "水化热_1d（J/g）" "水化热_3d（J/g）" "水化热_7d（J/g）" "水泥用量（kg/m3）" "FA化学组分_SiO2（%）" "FA化学组分_Al2O3（%）" "FA化学组分_Fe2O3（%）" "FA化学组分_CaO（%）" "粉煤灰用量（kg/m3）" "砂表观密度（kg/m3）" "砂用量（kg/m3）" "石1坚固性（%）" "石1压碎指标（%）" "石1用量（kg/m3）" "石2坚固性（%）" "石2压碎指标（%）" "石2用量（kg/m3）" "石3坚固性（%）" "石3压碎指标（%）" "石3用量（kg/m3）" "外加剂1用量（%）" "外加剂2用量（%）" \
+    --target_column "28d抗压强度" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 10000 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+  ```
+
+  训练结束后最佳R²出现在Epoch 375/5375, Train Loss: 33.395149, Val Loss: 23.846676, MSE: 24.186716, MAE: 3.868034, R²: 0.834725  
+  ![alt text](mdImage/best_prediction2.19_onlytext_nogate_alldata_loss.png)
+  ![alt text](mdImage/best_prediction2.19_onlytext_nogate_alldata_R^2.png)
+  ![alt text](mdImage/best_prediction2.19_onlytext_nogate_alldata_training-metrics.png)
+
+### 2025.2.20
+1.  将 `data_processed.csv` 中的数据扩充至200条，以方便使用200条图文多模态数据进行训练  
+   门控全开（前面的应该都是全开门控，关门控的修改错位置了 T_T），使用OSF，  
+   训练结束后最佳R²出现在Epoch 1834/5000, Train Loss: 8.776495, Val Loss: 8.371666, MSE: 7.270442, MAE: 1.985031, R²: 0.939003
+   ![alt text](mdImage/best_prediction2.20_onlytext_nogate_200data_loss.png)
+   ![alt text](mdImage/best_prediction2.20_onlytext_nogate_200data_R^2.png)
+   ![alt text](mdImage/best_prediction2.20_onlytext_nogate_200data_training-metrics.png)
+   
+  ```bash
+  python utils.py \
+    --data_path "data_processed.csv" \
+    --continuous_columns "slide_id" "水用量（kg/m3）" "水泥矿物组分_C3S（%）" "水泥矿物组分_C2S（%）" "水泥矿物组分_C3A（%）" "水泥矿物组分_C4AF（%）" "胶砂抗压_7d（MPa）" "胶砂抗压_28d（MPa）" "胶砂抗折3d（MPa）" "胶砂抗折7d（MPa）" "胶砂抗折_28d（MPa）" "水化热_1d（J/g）" "水化热_3d（J/g）" "水化热_7d（J/g）" "水泥用量（kg/m3）" "FA化学组分_SiO2（%）" "FA化学组分_Al2O3（%）" "FA化学组分_Fe2O3（%）" "FA化学组分_CaO（%）" "粉煤灰用量（kg/m3）" "砂表观密度（kg/m3）" "砂用量（kg/m3）" "石1坚固性（%）" "石1压碎指标（%）" "石1用量（kg/m3）" "石2坚固性（%）" "石2压碎指标（%）" "石2用量（kg/m3）" "石3坚固性（%）" "石3压碎指标（%）" "石3用量（kg/m3）" "外加剂1用量（%）" "外加剂2用量（%）" \
+    --target_column "28d抗压强度" \
+    --test_size 0.2 \
+    --random_state 42 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --num_epochs 5000 \
+    --log_dir "checkpoints" \
+    --feature_dir "output"
+  ```

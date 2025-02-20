@@ -70,10 +70,19 @@ class FeatureBagsDataset(Dataset):
         file_name = f"{self.file_prefix}{slide_id_int}{self.file_suffix}"
         file_path = os.path.join(self.feature_dir, file_name)
         
-        # 加载对应的图片特征文件
-        # 注意检查: .npz文件中必须有 'features' 键
-        data = np.load(file_path)
-        img_feature = torch.tensor(data['features'], dtype=torch.float32)
+        # # 加载对应的图片特征文件
+        # # 注意检查: .npz文件中必须有 'features' 键
+        # data = np.load(file_path)
+        # img_feature = torch.tensor(data['features'], dtype=torch.float32)
+
+        if os.path.exists(file_path):
+            data = np.load(file_path)
+            img_feature = torch.tensor(data['features'], dtype=torch.float32)
+        else:
+            # 如果文件不存在，构造一个和预期 shape 一致的空张量，
+            # 使用全零张量以免后续计算出错
+            print(f"路径不存在：{file_path}，构造全零张量")
+            img_feature = torch.zeros((4, 524288), dtype=torch.float32)
 
         # 仅提取连续特征（无离散特征）
         continuous_features = torch.tensor(
@@ -520,8 +529,8 @@ if __name__ == "__main__":
         p_dropout_atn=0.25,
         fusion_type='kron',
         use_bilinear=True,
-        gate_hist=True,
-        gate_text=True,
+        gate_hist=True,     # 设为False后，图像特征不会再被文本特征影响
+        gate_text=True,     # 设为False后，文本特征不会再被图像特征影响
     ).to(device)
 
     # 6) 优化器和损失函数

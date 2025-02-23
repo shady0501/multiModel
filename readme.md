@@ -400,7 +400,7 @@ python extract_features.py \
 
 5. 继续模拟图像数据，从原来100张增加至现在的200张
    
-6. 使用纯文本表格数据进行预测，图像文本特征互不影响，训练5000轮后，  
+6. 使用纯文本表格数据进行预测，图像文本特征互不影响，未使用OSF，训练5000轮后，  
    训练结束后最佳R²出现在Epoch 1819/5000, Train Loss: 13.984750, Val Loss: 2.017839, MSE: 2.017839, MAE: 1.176800, **R²: 0.982047**
    ![alt text](mdImage/best_prediction2.19_onlytext_nogate_loss.png)
    ![alt text](mdImage/best_prediction2.19_onlytext_nogate_R^2.png)
@@ -449,3 +449,86 @@ python extract_features.py \
     --log_dir "checkpoints" \
     --feature_dir "output"
   ```
+
+### 2025.2.21
+1. 不使用OSF，门控全开，使用影响后的文本特征进行训练，5000轮，  
+   训练结束后最佳R²出现在Epoch 3897/5000, Train Loss: 11.904973, Val Loss: 7.701504, MSE: 10.446014, MAE: 2.198862, R²: 0.912361  
+   ![alt text](image.png)
+   ![alt text](image-1.png)
+   ![alt text](image-2.png)
+
+2. 200条数据，gate全关，未使用OSF，训练5000轮，
+   训练结束后最佳R²出现在Epoch 4976/5000, Train Loss: 10.231179, Val Loss: 4.970662, MSE: 5.050251, MAE: 1.785816, R²: 0.957630  
+   ![alt text](image-3.png)
+   ![alt text](image-4.png)
+   ![alt text](image-5.png)
+
+3. 200条数据，gate全开，未使用OSF，训练5000轮，  
+   训练结束后最佳R²出现在Epoch 1836/5000, Train Loss: 11.003951, Val Loss: 1.702690, MSE: 1.702690, MAE: 1.052739, R²: 0.984851  
+   ![alt text](image-6.png)
+   ![alt text](image-7.png)
+   ![alt text](image-8.png)
+   
+4. 200条数据，gate全关且注释掉门控相关代码，未使用OSF，model里逻辑改为直接使用仅将text_features进行一次处理`text_cont = self.text_continuous_layer(text_features)`以和预测所用的输入向量维度匹配，训练5000轮，  
+   训练结束后最佳R²出现在Epoch 4729/5000, Train Loss: 7.399903, Val Loss: 12.227687, MSE: 11.077335, MAE: 2.504987, R²: 0.907065  
+   ![alt text](image-9.png)
+   ![alt text](image-10.png)
+   ![alt text](image-11.png)
+   
+5. 由于上面0.984851和之前的0.912361差距太大，因此进行三次实验查看方差（下面这两个都是100的数据集上跑的T_T，重新跑了）
+  - 训练结束后最佳R²出现在Epoch 1836/5000, Train Loss: 11.003951, Val Loss: 1.702690, MSE: 1.702690, MAE: 1.052739, R²: 0.984851
+
+  - 训练结束后最佳R²出现在Epoch 1786/5000, Train Loss: 8.846748, Val Loss: 1.988263, MSE: 1.988262, MAE: 1.099349, R²: 0.982310
+    ![alt text](image-12.png)
+    ![alt text](image-13.png)
+    ![alt text](image-14.png)
+
+6. 生成图片，生成至375张，下一个从376开始（即377行）
+   
+### 2025.2.22
+1. 200数据集，gate全开，未使用OSF，训练5000轮，  
+   - 训练结束后最佳R²出现在Epoch 3664/5000, Train Loss: 11.983153, Val Loss: 5.962282, MSE: 7.536364, MAE: 2.033414, R²: 0.936772  
+      ![alt text](image-15.png)
+      ![alt text](image-16.png)
+      ![alt text](image-17.png)
+   - 训练结束后最佳R²出现在Epoch 2936/5000, Train Loss: 12.558142, Val Loss: 5.542506, MSE: 6.833686, MAE: 2.120836, R²: 0.942668  
+     ![alt text](image-27.png)
+     ![alt text](image-28.png)
+     ![alt text](image-29.png)
+   - 训练结束后最佳R²出现在Epoch 4852/5000, Train Loss: 12.662274, Val Loss: 7.113982, MSE: 7.305274, MAE: 2.173342, R²: 0.938711  
+     ![alt text](image-36.png)
+     ![alt text](image-37.png)
+     ![alt text](image-38.png)
+
+2. 200数据集，gate全开，使用OSF，训练5000轮，  
+   - 训练结束后最佳R²出现在Epoch 3901/5000, Train Loss: 9.131443, Val Loss: 7.642505, MSE: 7.981929, MAE: 2.226889, R²: 0.933034  
+     ![alt text](image-18.png)
+     ![alt text](image-19.png)
+     ![alt text](image-20.png)
+   - 训练结束后最佳R²出现在Epoch 2868/5000, Train Loss: 10.661933, Val Loss: 7.111253, MSE: 6.049787, MAE: 1.911677, R²: 0.949244  
+     ![alt text](image-30.png)
+     ![alt text](image-31.png)
+     ![alt text](image-32.png)
+   - 训练结束后最佳R²出现在Epoch 2729/5000, Train Loss: 12.294035, Val Loss: 9.606826, MSE: 9.021677, MAE: 2.368280, R²: 0.924311  
+     ![alt text](image-39.png)
+     ![alt text](image-40.png)
+     ![alt text](image-41.png)
+
+3. 200数据集，gate全关，未使用OSF，训练5000轮，  
+   - 训练结束后最佳R²出现在Epoch 4288/5000, Train Loss: 9.396043, Val Loss: 6.835231, MSE: 6.639217, MAE: 1.919623, R²: 0.944299  
+     ![alt text](image-21.png)
+     ![alt text](image-22.png)
+     ![alt text](image-23.png)
+   - 训练结束后最佳R²出现在Epoch 4670/5000, Train Loss: 6.763716, Val Loss: 5.827636, MSE: 6.284105, MAE: 1.880161, R²: 0.947278  
+     ![alt text](image-24.png)
+     ![alt text](image-25.png)
+     ![alt text](image-26.png)
+   - 训练结束后最佳R²出现在Epoch 4894/5000, Train Loss: 9.066399, Val Loss: 4.892933, MSE: 5.652089, MAE: 1.828994, R²: 0.952581  
+     ![alt text](image-33.png)
+     ![alt text](image-34.png)
+     ![alt text](image-35.png)
+
+4. 生成图片，生成至550张，下一个从551开始（即552行）
+
+### 2025.2.23
+1. 

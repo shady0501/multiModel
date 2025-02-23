@@ -251,8 +251,8 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
     # 用于记录最佳R²及对应的训练信息
     best_r2 = -float('inf')
     best_epoch = start_epoch
-    best_train_loss = None
-    best_val_loss = None
+    best_train_loss = float('inf')
+    best_val_loss = float('inf')
     best_mse = None
     best_mae = None
 
@@ -317,8 +317,8 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs,
               f"Val Loss: {val_loss:.6f}, "
               f"MSE: {mse:.6f}, MAE: {mae:.6f}, R²: {r2:.6f}")
         
-        # 更新最佳指标：以R²为标准
-        if r2 > best_r2:
+        # 更新最佳指标：以val_loss为标准
+        if val_loss < best_val_loss:
             best_r2 = r2
             best_epoch = epoch
             best_train_loss = train_loss
